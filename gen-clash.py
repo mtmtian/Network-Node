@@ -271,7 +271,7 @@ for dev in devices:
         DEVICE=dev,
         DEV_UUID=uuid,
         SS_PASSWORD=f"{env['SS_IPSK']}:{upsk}",
-        HY2_PASSWORD=hy2pw,
+        HY2_PASSWORD=f"{dev}:{hy2pw}",
         **env,
     )
     path = OUT_DIR / f"{dev}.yaml"
