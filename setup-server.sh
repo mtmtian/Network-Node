@@ -9,10 +9,11 @@ ENV_FILE="${1:-/tmp/server-env.sh}"
 # shellcheck disable=SC1090
 . "$ENV_FILE"
 : "${SS_PORT:?}" "${SS_IPSK:?}" "${REALITY_PORT:?}" "${REALITY_SNI:?}" "${REALITY_SHORTID:?}" "${DEVICES:?}" "${HY2_PORT:?}"
+: "${ANYTLS_PORT:?}" "${ANYTLS_PASS:?}"
 
 vv() { eval "printf '%s' \"\${$1:-}\""; }   # indirect var read
 
-echo "=== [1/8] Enabling BBR ==="
+echo "=== [1/9] Enabling BBR ==="
 if ! grep -q "net.ipv4.tcp_congestion_control=bbr" /etc/sysctl.conf; then
   sudo tee -a /etc/sysctl.conf > /dev/null <<'SYSCTL'
 
@@ -24,13 +25,13 @@ fi
 sudo sysctl -p > /dev/null
 sysctl net.ipv4.tcp_congestion_control
 
-echo "=== [2/8] Installing prerequisites ==="
+echo "=== [2/9] Installing prerequisites ==="
 sudo DEBIAN_FRONTEND=noninteractive apt-get update -qq
 sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq curl unzip xz-utils openssl
 
 ARCH="$(uname -m)"
 
-echo "=== [3/8] Installing shadowsocks-rust ==="
+echo "=== [3/9] Installing shadowsocks-rust ==="
 SS_VER="v1.22.0"
 case "$ARCH" in
   x86_64)  SS_TARGET="x86_64-unknown-linux-gnu" ;;
@@ -43,7 +44,7 @@ tar -C /tmp -xf /tmp/ss.tar.xz ssserver
 sudo install -m 0755 /tmp/ssserver /usr/local/bin/ssserver
 /usr/local/bin/ssserver --version
 
-echo "=== [4/8] Installing Xray ==="
+echo "=== [4/9] Installing Xray ==="
 case "$ARCH" in
   x86_64)  XRAY_ZIP="Xray-linux-64.zip" ;;
   aarch64) XRAY_ZIP="Xray-linux-arm64-v8a.zip" ;;
@@ -54,7 +55,7 @@ sudo unzip -oq /tmp/xray.zip -d /usr/local/bin xray
 sudo chmod 0755 /usr/local/bin/xray
 /usr/local/bin/xray version | head -1
 
-echo "=== [5/8] Installing Hysteria2 ==="
+echo "=== [5/9] Installing Hysteria2 ==="
 case "$ARCH" in
   x86_64)  HY2_BIN="hysteria-linux-amd64" ;;
   aarch64) HY2_BIN="hysteria-linux-arm64" ;;
@@ -64,13 +65,24 @@ curl -fsSL -o /tmp/hysteria \
 sudo install -m 0755 /tmp/hysteria /usr/local/bin/hysteria
 /usr/local/bin/hysteria version | head -1
 
-echo "=== [6/8] Generating Reality keypair ==="
+echo "=== [6/9] Installing AnyTLS ==="
+case "$ARCH" in
+  x86_64)  AT_PKG="anytls_linux_amd64.zip" ;;
+  aarch64) AT_PKG="anytls_linux_arm64.zip" ;;
+esac
+curl -fsSL -o /tmp/anytls.zip \
+  "https://github.com/anytls/anytls-go/releases/latest/download/${AT_PKG}"
+sudo unzip -oq /tmp/anytls.zip -d /tmp/anytls-extract
+sudo install -m 0755 /tmp/anytls-extract/anytls-server /usr/local/bin/anytls-server
+/usr/local/bin/anytls-server -h 2>&1 | head -3 || true
+
+echo "=== [7/9] Generating Reality keypair ==="
 KEYS="$(/usr/local/bin/xray x25519)"
 REALITY_PRIVATE="$(echo "$KEYS" | grep -iE 'private' | awk '{print $NF}')"
 REALITY_PUBLIC="$(echo "$KEYS"  | grep -iE 'public|password' | awk '{print $NF}')"
 [ -n "$REALITY_PRIVATE" ] && [ -n "$REALITY_PUBLIC" ] || { echo "x25519 keygen failed"; exit 1; }
 
-echo "=== [7/8] Writing server configs ==="
+echo "=== [8/9] Writing server configs ==="
 # --- shadowsocks users + xray clients + hysteria2 userpass ---
 ss_users=""; xray_clients=""; hy2_users=""; first=1
 for d in $DEVICES; do
@@ -240,13 +252,38 @@ DynamicUser=true
 WantedBy=multi-user.target
 UNIT
 
-sudo systemctl daemon-reload
-sudo systemctl enable ssserver xray hysteria
-sudo systemctl restart ssserver xray hysteria
-sleep 2
-sudo systemctl is-active ssserver xray hysteria || true
+# AnyTLS systemd unit (reuses hysteria's self-signed cert)
+sudo tee /etc/systemd/system/anytls.service > /dev/null <<UNIT
+[Unit]
+Description=AnyTLS server
+After=network-online.target
+Wants=network-online.target
 
-echo "=== [8/8] Hardening (SSH + auto-updates) ==="
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/anytls-server -l 0.0.0.0:${ANYTLS_PORT} -p ${ANYTLS_PASS}
+Restart=on-failure
+RestartSec=5
+LimitNOFILE=1048576
+NoNewPrivileges=true
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+DynamicUser=true
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+
+sudo systemctl daemon-reload
+sudo systemctl enable ssserver xray hysteria anytls
+sudo systemctl restart ssserver xray hysteria anytls
+sleep 2
+sudo systemctl is-active ssserver xray hysteria anytls || true
+
+echo "=== [9/9] Hardening (SSH + auto-updates) ==="
 sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq unattended-upgrades
 sudo dpkg-reconfigure -f noninteractive unattended-upgrades || true
 sudo sed -i \
@@ -258,7 +295,7 @@ sudo systemctl reload ssh || sudo systemctl reload sshd || true
 
 echo ""
 echo "=== Listening sockets ==="
-sudo ss -tulnp | grep -E 'ssserver|xray|hysteria' || true
+sudo ss -tulnp | grep -E 'ssserver|xray|hysteria|anytls' || true
 
 # machine-readable handoff line — local deployer greps this
 echo ""

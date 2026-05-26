@@ -50,7 +50,7 @@ srv_env="$tmpd/server-env.sh"
   for k in REALITY_PORT REALITY_SNI DEVICES; do
     printf "export %s='%s'\n" "$k" "$(varval "$k")"
   done
-  for k in SS_PORT SS_IPSK REALITY_SHORTID HY2_PORT; do
+  for k in SS_PORT SS_IPSK REALITY_SHORTID HY2_PORT ANYTLS_PORT ANYTLS_PASS; do
     printf "export %s='%s'\n" "$k" "$(secret_get "$k")"
   done
   for d in $DEVICES; do
@@ -90,7 +90,7 @@ printf '\n\033[1;32m=== 部署完成 ===\033[0m\n'
 echo "  服务器 IP : $STATIC_IP"
 echo "  Reality   : 端口 $REALITY_PORT  SNI $REALITY_SNI"
 echo "  Hysteria2 : 端口 $HY2_PORT (UDP)"
-echo "  SS 兜底   : 端口 $SS_PORT"
+echo "  AnyTLS    : 端口 $ANYTLS_PORT (TCP)"
 echo "  配置文件  : $KIT_DIR/clash-configs/*.yaml"
 echo ""
 echo "导入 Clash Verge：设置 → 配置 → 导入 → 选择 clash-configs/ 下对应设备的 .yaml"

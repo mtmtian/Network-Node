@@ -10,6 +10,7 @@ load_secrets
 : "${MACHINE_TYPE:=e2-micro}" "${NETWORK_TIER:=PREMIUM}"
 : "${REALITY_PORT:=443}" "${SS_PORT:?SS_PORT 未生成，请先运行 secrets.sh}"
 : "${HY2_PORT:?HY2_PORT 未生成，请先运行 secrets.sh}"
+: "${ANYTLS_PORT:?ANYTLS_PORT 未生成，请先运行 secrets.sh}"
 
 GC=(gcloud --project "$PROJECT_ID" --quiet)
 
@@ -27,7 +28,7 @@ setkv STATIC_IP "$STATIC_IP"
 ok "静态 IP：$STATIC_IP"
 
 say "[3/4] 防火墙规则（幂等）"
-FW_RULES="tcp:${SS_PORT},udp:${SS_PORT},tcp:${REALITY_PORT},udp:${HY2_PORT}"
+FW_RULES="tcp:${SS_PORT},udp:${SS_PORT},tcp:${REALITY_PORT},udp:${HY2_PORT},tcp:${ANYTLS_PORT}"
 if "${GC[@]}" compute firewall-rules describe allow-proxy >/dev/null 2>&1; then
   "${GC[@]}" compute firewall-rules update allow-proxy --rules "$FW_RULES"
 else

@@ -34,9 +34,10 @@ env.update(load_kv(HERE / "deploy.conf"))
 env.update(load_kv(HERE / ".secrets.env"))
 
 REQUIRED = [
-    "STATIC_IP", "SS_PORT", "SS_IPSK",
+    "STATIC_IP",
     "REALITY_PORT", "REALITY_SNI", "REALITY_PUBLIC", "REALITY_SHORTID",
     "HY2_PORT",
+    "ANYTLS_PORT", "ANYTLS_PASS",
 ]
 missing = [k for k in REQUIRED if not env.get(k)]
 if missing:
@@ -45,7 +46,7 @@ if missing:
 devices = env.get("DEVICES", "mac iphone ipad laptop spare").split()
 
 TEMPLATE = """# Clash.Meta / Mihomo config — device: {DEVICE}
-# Server: {STATIC_IP}  |  primary: VLESS+Reality:{REALITY_PORT}  |  fallback: Hysteria2:{HY2_PORT}/udp, SS-2022:{SS_PORT}
+# Server: {STATIC_IP}  |  primary: VLESS+Reality:{REALITY_PORT}  |  fallback: Hysteria2:{HY2_PORT}/udp, AnyTLS:{ANYTLS_PORT}/tcp
 
 mixed-port: 7890
 allow-lan: false
@@ -103,14 +104,15 @@ proxies:
     alpn:
       - h3
 
-  - name: "US-SS"
-    type: ss
+  - name: "US-AnyTLS"
+    type: anytls
     server: {STATIC_IP}
-    port: {SS_PORT}
-    cipher: 2022-blake3-aes-128-gcm
-    password: "{SS_PASSWORD}"
+    port: {ANYTLS_PORT}
+    password: "{ANYTLS_PASS}"
+    sni: www.bing.com
+    skip-cert-verify: true
+    client-fingerprint: chrome
     udp: true
-    udp-over-tcp: false
 
 proxy-groups:
   - name: "🚀 Proxy"
@@ -119,7 +121,7 @@ proxy-groups:
       - "⚡ Auto"
       - "US-Reality"
       - "US-HY2"
-      - "US-SS"
+      - "US-AnyTLS"
       - DIRECT
 
   - name: "⚡ Auto"
@@ -130,7 +132,7 @@ proxy-groups:
     proxies:
       - "US-Reality"
       - "US-HY2"
-      - "US-SS"
+      - "US-AnyTLS"
 
   - name: "🤖 AI"
     type: select
@@ -138,7 +140,7 @@ proxy-groups:
       - "⚡ Auto"
       - "US-Reality"
       - "US-HY2"
-      - "US-SS"
+      - "US-AnyTLS"
       - "🚀 Proxy"
       - DIRECT
 
@@ -262,15 +264,13 @@ rules:
 
 OUT_DIR.mkdir(exist_ok=True)
 for dev in devices:
-    upsk = env.get(f"SS_UPSK_{dev}")
     uuid = env.get(f"REALITY_UUID_{dev}")
     hy2pw = env.get(f"HY2_PASS_{dev}")
-    if not upsk or not uuid or not hy2pw:
-        sys.exit(f"ERROR: 设备 {dev} 缺少 SS_UPSK_{dev} / REALITY_UUID_{dev} / HY2_PASS_{dev}")
+    if not uuid or not hy2pw:
+        sys.exit(f"ERROR: 设备 {dev} 缺少 REALITY_UUID_{dev} / HY2_PASS_{dev}")
     yaml = TEMPLATE.format(
         DEVICE=dev,
         DEV_UUID=uuid,
-        SS_PASSWORD=f"{env['SS_IPSK']}:{upsk}",
         HY2_PASSWORD=f"{dev}:{hy2pw}",
         **env,
     )

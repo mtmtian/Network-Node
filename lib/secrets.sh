@@ -37,6 +37,19 @@ if [ -z "${HY2_PORT:-}" ]; then
   ensure_secret HY2_PORT "$hy2p"
 fi
 
+# AnyTLS 端口：TCP，独立的端口段
+if [ -z "${ANYTLS_PORT:-}" ]; then
+  if command -v shuf >/dev/null 2>&1; then
+    atp="$(shuf -i 20000-29999 -n1)"
+  else
+    atp="$(python3 -c 'import random; print(random.randint(20000,29999))')"
+  fi
+  ensure_secret ANYTLS_PORT "$atp"
+fi
+
+# AnyTLS 单一共享密码（anytls-go 服务端不原生支持多用户）
+ensure_secret ANYTLS_PASS "$(rand_psk)"
+
 # 服务器主密钥(iPSK) + Reality short-id（全设备共用）
 ensure_secret SS_IPSK        "$(rand_psk)"
 ensure_secret REALITY_SHORTID "$(rand_short)"
