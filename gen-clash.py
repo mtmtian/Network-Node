@@ -150,16 +150,17 @@ proxies:
     udp: true
 
 proxy-groups:
-  - name: "🚀 Proxy"
+  - name: "🚦 节点策略"
     type: select
     proxies:
+      - "⚡ 自动测速"
+      - "🔧 手动选择"
       - "US-Reality"
-      - "⚡ Auto"
       - "US-HY2"
       - "US-AnyTLS"
       - DIRECT
 
-  - name: "⚡ Auto"
+  - name: "⚡ 自动测速"
     type: url-test
     lazy: true
     url: https://www.gstatic.com/generate_204
@@ -170,36 +171,72 @@ proxy-groups:
       - "US-HY2"
       - "US-AnyTLS"
 
-  - name: "🧠 Anti-Restrict"
+  - name: "🔧 手动选择"
     type: select
     proxies:
       - "US-Reality"
-      - "⚡ Auto"
       - "US-HY2"
       - "US-AnyTLS"
-      - "🚀 Proxy"
       - DIRECT
 
-  - name: "🌎 Global"
+  - name: "🌐 代理流量"
     type: select
     proxies:
-      - "🚀 Proxy"
+      - "🚦 节点策略"
+      - "⚡ 自动测速"
+      - "🔧 手动选择"
+      - "US-Reality"
+      - "US-HY2"
+      - "US-AnyTLS"
       - DIRECT
+      - REJECT
 
-  - name: "🇨🇳 Direct-CN"
+  - name: "↪️ 直连流量"
     type: select
     proxies:
       - DIRECT
-      - "🚀 Proxy"
+      - "🚦 节点策略"
+      - "⚡ 自动测速"
+      - "🔧 手动选择"
+      - "US-Reality"
+      - "US-HY2"
+      - "US-AnyTLS"
+      - REJECT
 
-  - name: "🎯 Final"
+  - name: "🛑 屏蔽流量"
     type: select
     proxies:
-      - "🚀 Proxy"
+      - REJECT
       - DIRECT
+      - "🚦 节点策略"
+      - "⚡ 自动测速"
+      - "🔧 手动选择"
+      - "US-Reality"
+      - "US-HY2"
+      - "US-AnyTLS"
+
+  - name: "🎯 兜底策略"
+    type: select
+    proxies:
+      - "🚦 节点策略"
+      - DIRECT
+      - REJECT
+      - "⚡ 自动测速"
+      - "🔧 手动选择"
+      - "US-Reality"
+      - "US-HY2"
+      - "US-AnyTLS"
+
+rule-providers:
+  reject:
+    type: http
+    behavior: domain
+    url: https://raw.githubusercontent.com/Loyalsoldier/clash-rules/release/reject.txt
+    path: ./ruleset/loy_reject.yaml
+    interval: 86400
 
 rules:
-  # --- Local / private networks: DIRECT ---
+  # --- Local / private networks: always DIRECT ---
   - DOMAIN-SUFFIX,lan,DIRECT
   - DOMAIN-SUFFIX,local,DIRECT
   - IP-CIDR,127.0.0.0/8,DIRECT,no-resolve
@@ -211,124 +248,125 @@ rules:
   - IP-CIDR6,fc00::/7,DIRECT,no-resolve
   - IP-CIDR6,fe80::/10,DIRECT,no-resolve
 
-  # --- Work / CN business platforms: DIRECT ---
-  - DOMAIN-SUFFIX,e.kuaishou.com,DIRECT
-  - DOMAIN-SUFFIX,business.oceanengine.com,DIRECT
-  - DOMAIN-SUFFIX,cas.baidu.com,DIRECT
-  - DOMAIN-SUFFIX,e.qq.com,DIRECT
-  - DOMAIN-SUFFIX,oceanengine.com,DIRECT
-  - DOMAIN-SUFFIX,kylin.baidu.com,DIRECT
+  # --- Proxy allowlist: anti-restrict, global sites, attribution/business dashboards ---
+  - DOMAIN-SUFFIX,openai.com,🌐 代理流量
+  - DOMAIN-SUFFIX,chatgpt.com,🌐 代理流量
+  - DOMAIN-SUFFIX,oaistatic.com,🌐 代理流量
+  - DOMAIN-SUFFIX,oaiusercontent.com,🌐 代理流量
+  - DOMAIN-KEYWORD,openai,🌐 代理流量
+  - DOMAIN-SUFFIX,anthropic.com,🌐 代理流量
+  - DOMAIN-SUFFIX,claude.ai,🌐 代理流量
+  - DOMAIN-SUFFIX,claudeusercontent.com,🌐 代理流量
+  - DOMAIN-SUFFIX,dify.ai,🌐 代理流量
+  - DOMAIN-SUFFIX,coze.com,🌐 代理流量
+  - DOMAIN-SUFFIX,gemini.google.com,🌐 代理流量
+  - DOMAIN-SUFFIX,bard.google.com,🌐 代理流量
+  - DOMAIN-SUFFIX,makersuite.google.com,🌐 代理流量
+  - DOMAIN-SUFFIX,aistudio.google.com,🌐 代理流量
+  - DOMAIN-SUFFIX,generativelanguage.googleapis.com,🌐 代理流量
+  - DOMAIN-SUFFIX,perplexity.ai,🌐 代理流量
+  - DOMAIN-SUFFIX,pplx.ai,🌐 代理流量
+  - DOMAIN-SUFFIX,x.ai,🌐 代理流量
+  - DOMAIN-SUFFIX,grok.com,🌐 代理流量
+  - DOMAIN-SUFFIX,mistral.ai,🌐 代理流量
+  - DOMAIN-SUFFIX,huggingface.co,🌐 代理流量
+  - DOMAIN-SUFFIX,character.ai,🌐 代理流量
+  - DOMAIN-SUFFIX,poe.com,🌐 代理流量
+  - DOMAIN-SUFFIX,cohere.ai,🌐 代理流量
+  - DOMAIN-SUFFIX,cohere.com,🌐 代理流量
+  - DOMAIN-SUFFIX,stability.ai,🌐 代理流量
+  - DOMAIN-SUFFIX,replicate.com,🌐 代理流量
+  - DOMAIN-SUFFIX,runwayml.com,🌐 代理流量
+  - DOMAIN-SUFFIX,midjourney.com,🌐 代理流量
+  - DOMAIN-SUFFIX,ads.google.com,🌐 代理流量
+  - DOMAIN-SUFFIX,adwords.google.com,🌐 代理流量
+  - DOMAIN-SUFFIX,analytics.google.com,🌐 代理流量
+  - DOMAIN-SUFFIX,googletagmanager.com,🌐 代理流量
+  - DOMAIN-SUFFIX,googleadservices.com,🌐 代理流量
+  - DOMAIN-SUFFIX,googlesyndication.com,🌐 代理流量
+  - DOMAIN-SUFFIX,googletagservices.com,🌐 代理流量
+  - DOMAIN-SUFFIX,ads.tiktok.com,🌐 代理流量
+  - DOMAIN-SUFFIX,business.tiktok.com,🌐 代理流量
+  - DOMAIN-SUFFIX,tradingview.com,🌐 代理流量
+  - DOMAIN,dash.applovin.com,🌐 代理流量
+  - DOMAIN-SUFFIX,applovin.com,🌐 代理流量
+  - DOMAIN-SUFFIX,applvn.com,🌐 代理流量
+  - DOMAIN-SUFFIX,applovinedge.com,🌐 代理流量
+  - DOMAIN-SUFFIX,appsflyer.com,🌐 代理流量
+  - DOMAIN,suite.adjust.com,🌐 代理流量
+  - DOMAIN-SUFFIX,adjust.com,🌐 代理流量
+  - DOMAIN-SUFFIX,adj.st,🌐 代理流量
+  - DOMAIN-SUFFIX,kochava.com,🌐 代理流量
+  - DOMAIN-SUFFIX,branch.io,🌐 代理流量
+  - DOMAIN-SUFFIX,singular.net,🌐 代理流量
+  - DOMAIN-SUFFIX,google.com,🌐 代理流量
+  - DOMAIN-SUFFIX,googleapis.com,🌐 代理流量
+  - DOMAIN-SUFFIX,gstatic.com,🌐 代理流量
+  - DOMAIN-SUFFIX,ggpht.com,🌐 代理流量
+  - DOMAIN-SUFFIX,googleusercontent.com,🌐 代理流量
+  - DOMAIN-SUFFIX,youtube.com,🌐 代理流量
+  - DOMAIN-SUFFIX,youtu.be,🌐 代理流量
+  - DOMAIN-SUFFIX,ytimg.com,🌐 代理流量
+  - DOMAIN-SUFFIX,googlevideo.com,🌐 代理流量
+  - DOMAIN-SUFFIX,gmail.com,🌐 代理流量
+  - DOMAIN-SUFFIX,github.com,🌐 代理流量
+  - DOMAIN-SUFFIX,githubusercontent.com,🌐 代理流量
+  - DOMAIN-SUFFIX,githubassets.com,🌐 代理流量
+  - DOMAIN-SUFFIX,twitter.com,🌐 代理流量
+  - DOMAIN-SUFFIX,x.com,🌐 代理流量
+  - DOMAIN-SUFFIX,twimg.com,🌐 代理流量
+  - DOMAIN-SUFFIX,reddit.com,🌐 代理流量
+  - DOMAIN-SUFFIX,redditstatic.com,🌐 代理流量
+  - DOMAIN-SUFFIX,redd.it,🌐 代理流量
+  - DOMAIN-SUFFIX,wikipedia.org,🌐 代理流量
+  - DOMAIN-SUFFIX,wikimedia.org,🌐 代理流量
+  - DOMAIN-SUFFIX,stackoverflow.com,🌐 代理流量
+  - DOMAIN-SUFFIX,medium.com,🌐 代理流量
 
-  # --- Anti-restrict services ---
-  - DOMAIN-SUFFIX,openai.com,🧠 Anti-Restrict
-  - DOMAIN-SUFFIX,chatgpt.com,🧠 Anti-Restrict
-  - DOMAIN-SUFFIX,oaistatic.com,🧠 Anti-Restrict
-  - DOMAIN-SUFFIX,oaiusercontent.com,🧠 Anti-Restrict
-  - DOMAIN-KEYWORD,openai,🧠 Anti-Restrict
-  - DOMAIN-SUFFIX,anthropic.com,🧠 Anti-Restrict
-  - DOMAIN-SUFFIX,claude.ai,🧠 Anti-Restrict
-  - DOMAIN-SUFFIX,claudeusercontent.com,🧠 Anti-Restrict
-  - DOMAIN-SUFFIX,dify.ai,🧠 Anti-Restrict
-  - DOMAIN-SUFFIX,coze.com,🧠 Anti-Restrict
-  - DOMAIN-SUFFIX,gemini.google.com,🧠 Anti-Restrict
-  - DOMAIN-SUFFIX,bard.google.com,🧠 Anti-Restrict
-  - DOMAIN-SUFFIX,makersuite.google.com,🧠 Anti-Restrict
-  - DOMAIN-SUFFIX,aistudio.google.com,🧠 Anti-Restrict
-  - DOMAIN-SUFFIX,generativelanguage.googleapis.com,🧠 Anti-Restrict
-  - DOMAIN-SUFFIX,perplexity.ai,🧠 Anti-Restrict
-  - DOMAIN-SUFFIX,pplx.ai,🧠 Anti-Restrict
-  - DOMAIN-SUFFIX,x.ai,🧠 Anti-Restrict
-  - DOMAIN-SUFFIX,grok.com,🧠 Anti-Restrict
-  - DOMAIN-SUFFIX,mistral.ai,🧠 Anti-Restrict
-  - DOMAIN-SUFFIX,huggingface.co,🧠 Anti-Restrict
-  - DOMAIN-SUFFIX,character.ai,🧠 Anti-Restrict
-  - DOMAIN-SUFFIX,poe.com,🧠 Anti-Restrict
-  - DOMAIN-SUFFIX,cohere.ai,🧠 Anti-Restrict
-  - DOMAIN-SUFFIX,cohere.com,🧠 Anti-Restrict
-  - DOMAIN-SUFFIX,stability.ai,🧠 Anti-Restrict
-  - DOMAIN-SUFFIX,replicate.com,🧠 Anti-Restrict
-  - DOMAIN-SUFFIX,runwayml.com,🧠 Anti-Restrict
-  - DOMAIN-SUFFIX,midjourney.com,🧠 Anti-Restrict
+  # --- Direct allowlist: CN domains, Apple, domestic work platforms ---
+  - DOMAIN-SUFFIX,e.kuaishou.com,↪️ 直连流量
+  - DOMAIN-SUFFIX,business.oceanengine.com,↪️ 直连流量
+  - DOMAIN-SUFFIX,cas.baidu.com,↪️ 直连流量
+  - DOMAIN-SUFFIX,e.qq.com,↪️ 直连流量
+  - DOMAIN-SUFFIX,oceanengine.com,↪️ 直连流量
+  - DOMAIN-SUFFIX,kylin.baidu.com,↪️ 直连流量
+  - DOMAIN-SUFFIX,apple.com,↪️ 直连流量
+  - DOMAIN-SUFFIX,icloud.com,↪️ 直连流量
+  - DOMAIN-SUFFIX,cdn-apple.com,↪️ 直连流量
+  - DOMAIN-SUFFIX,mzstatic.com,↪️ 直连流量
+  - DOMAIN-SUFFIX,cn,↪️ 直连流量
+  - DOMAIN-KEYWORD,-cn,↪️ 直连流量
+  - DOMAIN-SUFFIX,baidu.com,↪️ 直连流量
+  - DOMAIN-SUFFIX,qq.com,↪️ 直连流量
+  - DOMAIN-SUFFIX,weixin.qq.com,↪️ 直连流量
+  - DOMAIN-SUFFIX,bilibili.com,↪️ 直连流量
+  - DOMAIN-SUFFIX,taobao.com,↪️ 直连流量
+  - DOMAIN-SUFFIX,tmall.com,↪️ 直连流量
+  - DOMAIN-SUFFIX,alipay.com,↪️ 直连流量
+  - DOMAIN-SUFFIX,zhihu.com,↪️ 直连流量
+  - DOMAIN-SUFFIX,douban.com,↪️ 直连流量
+  - DOMAIN-SUFFIX,sina.com.cn,↪️ 直连流量
+  - DOMAIN-SUFFIX,163.com,↪️ 直连流量
+  - DOMAIN-SUFFIX,126.com,↪️ 直连流量
+  - DOMAIN-SUFFIX,douyin.com,↪️ 直连流量
+  - DOMAIN-SUFFIX,xiaohongshu.com,↪️ 直连流量
+  - DOMAIN-SUFFIX,netflix.com,↪️ 直连流量
+  - DOMAIN-SUFFIX,nflxvideo.net,↪️ 直连流量
+  - DOMAIN-SUFFIX,hulu.com,↪️ 直连流量
+  - DOMAIN-SUFFIX,disneyplus.com,↪️ 直连流量
+  - DOMAIN-SUFFIX,hbomax.com,↪️ 直连流量
+  - DOMAIN-SUFFIX,max.com,↪️ 直连流量
+  - DOMAIN-SUFFIX,peacocktv.com,↪️ 直连流量
 
-  # --- Ads / attribution / business dashboards ---
-  - DOMAIN-SUFFIX,ads.google.com,🧠 Anti-Restrict
-  - DOMAIN-SUFFIX,adwords.google.com,🧠 Anti-Restrict
-  - DOMAIN-SUFFIX,analytics.google.com,🧠 Anti-Restrict
-  - DOMAIN-SUFFIX,googletagmanager.com,🧠 Anti-Restrict
-  - DOMAIN-SUFFIX,googleadservices.com,🧠 Anti-Restrict
-  - DOMAIN-SUFFIX,googlesyndication.com,🧠 Anti-Restrict
-  - DOMAIN-SUFFIX,googletagservices.com,🧠 Anti-Restrict
-  - DOMAIN-SUFFIX,ads.tiktok.com,🧠 Anti-Restrict
-  - DOMAIN-SUFFIX,business.tiktok.com,🧠 Anti-Restrict
-  - DOMAIN-SUFFIX,tradingview.com,🧠 Anti-Restrict
-  - DOMAIN,dash.applovin.com,🧠 Anti-Restrict
-  - DOMAIN-SUFFIX,applovin.com,🧠 Anti-Restrict
-  - DOMAIN-SUFFIX,applvn.com,🧠 Anti-Restrict
-  - DOMAIN-SUFFIX,applovinedge.com,🧠 Anti-Restrict
-  - DOMAIN-SUFFIX,appsflyer.com,🧠 Anti-Restrict
-  - DOMAIN,suite.adjust.com,🧠 Anti-Restrict
-  - DOMAIN-SUFFIX,adjust.com,🧠 Anti-Restrict
-  - DOMAIN-SUFFIX,adj.st,🧠 Anti-Restrict
-  - DOMAIN-SUFFIX,kochava.com,🧠 Anti-Restrict
-  - DOMAIN-SUFFIX,branch.io,🧠 Anti-Restrict
-  - DOMAIN-SUFFIX,singular.net,🧠 Anti-Restrict
-
-  # --- Streaming (DIRECT — GCP IPs usually blocked) ---
-  - DOMAIN-SUFFIX,netflix.com,🇨🇳 Direct-CN
-  - DOMAIN-SUFFIX,nflxvideo.net,🇨🇳 Direct-CN
-  - DOMAIN-SUFFIX,hulu.com,🇨🇳 Direct-CN
-  - DOMAIN-SUFFIX,disneyplus.com,🇨🇳 Direct-CN
-  - DOMAIN-SUFFIX,hbomax.com,🇨🇳 Direct-CN
-  - DOMAIN-SUFFIX,max.com,🇨🇳 Direct-CN
-  - DOMAIN-SUFFIX,peacocktv.com,🇨🇳 Direct-CN
-
-  # --- Google / YouTube / common Western sites: Proxy ---
-  - DOMAIN-SUFFIX,google.com,🌎 Global
-  - DOMAIN-KEYWORD,google,🌎 Global
-  - DOMAIN-SUFFIX,googleapis.com,🌎 Global
-  - DOMAIN-SUFFIX,gstatic.com,🌎 Global
-  - DOMAIN-SUFFIX,ggpht.com,🌎 Global
-  - DOMAIN-SUFFIX,youtube.com,🌎 Global
-  - DOMAIN-SUFFIX,ytimg.com,🌎 Global
-  - DOMAIN-SUFFIX,googlevideo.com,🌎 Global
-  - DOMAIN-SUFFIX,github.com,🌎 Global
-  - DOMAIN-SUFFIX,githubusercontent.com,🌎 Global
-  - DOMAIN-SUFFIX,githubassets.com,🌎 Global
-  - DOMAIN-SUFFIX,twitter.com,🌎 Global
-  - DOMAIN-SUFFIX,x.com,🌎 Global
-  - DOMAIN-SUFFIX,twimg.com,🌎 Global
-  - DOMAIN-SUFFIX,reddit.com,🌎 Global
-  - DOMAIN-SUFFIX,redditstatic.com,🌎 Global
-  - DOMAIN-SUFFIX,redd.it,🌎 Global
-  - DOMAIN-SUFFIX,wikipedia.org,🌎 Global
-  - DOMAIN-SUFFIX,wikimedia.org,🌎 Global
-  - DOMAIN-SUFFIX,stackoverflow.com,🌎 Global
-  - DOMAIN-SUFFIX,medium.com,🌎 Global
-
-  # --- CN domains: DIRECT ---
-  - DOMAIN-SUFFIX,cn,DIRECT
-  - DOMAIN-KEYWORD,-cn,DIRECT
-  - DOMAIN-SUFFIX,baidu.com,DIRECT
-  - DOMAIN-SUFFIX,qq.com,DIRECT
-  - DOMAIN-SUFFIX,weixin.qq.com,DIRECT
-  - DOMAIN-SUFFIX,bilibili.com,DIRECT
-  - DOMAIN-SUFFIX,taobao.com,DIRECT
-  - DOMAIN-SUFFIX,tmall.com,DIRECT
-  - DOMAIN-SUFFIX,alipay.com,DIRECT
-  - DOMAIN-SUFFIX,zhihu.com,DIRECT
-  - DOMAIN-SUFFIX,douban.com,DIRECT
-  - DOMAIN-SUFFIX,sina.com.cn,DIRECT
-  - DOMAIN-SUFFIX,163.com,DIRECT
-  - DOMAIN-SUFFIX,126.com,DIRECT
-  - DOMAIN-SUFFIX,douyin.com,DIRECT
-  - DOMAIN-SUFFIX,xiaohongshu.com,DIRECT
+  # --- Block after explicit allow rules ---
+  - RULE-SET,reject,🛑 屏蔽流量
 
   # --- GeoIP fallback ---
-  - GEOIP,CN,DIRECT
   - GEOIP,PRIVATE,DIRECT,no-resolve
+  - GEOIP,CN,↪️ 直连流量
 
   # --- Default ---
-  - MATCH,🎯 Final
+  - MATCH,🎯 兜底策略
 """
 
 OUT_DIR.mkdir(exist_ok=True)
