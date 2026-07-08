@@ -54,6 +54,14 @@ CDN_WS_PATH = env.get("CDN_WS_PATH", "").lstrip("/")
 cdn_on = env.get("CDN_ENABLE", "false") == "true" and bool(CDN_HOSTNAME) and bool(CDN_WS_PATH)
 CDN_REF = '\n      - "US-CDN"' if cdn_on else ""
 
+# ── Hysteria2 Brutal 拥塞控制（可选）──
+# 只有同时设置 HY2_UP / HY2_DOWN 才注入 up/down，激活 Brutal（无视丢包按固定带宽发送），
+# 这是 Hysteria2 在跨太平洋丢包链路上提速的核心。值必须填你实测速度的 ~80%——填太高会
+# 自伤丢包反而更慢。留空 = 保持 Hysteria2 默认动态 CC（向后兼容，与历史行为一致）。
+HY2_UP = env.get("HY2_UP", "").strip()
+HY2_DOWN = env.get("HY2_DOWN", "").strip()
+HY2_BW = f'    up: "{HY2_UP}"\n    down: "{HY2_DOWN}"\n' if HY2_UP and HY2_DOWN else ""
+
 
 def cdn_proxy_block(dev_cdn_uuid):
     """US-CDN 节点（VLESS+WS+TLS，经 Cloudflare）。CDN 关闭时返回空串。"""
@@ -172,7 +180,7 @@ proxies:
     skip-cert-verify: true
     alpn:
       - h3
-
+{HY2_BW}
   - name: "US-AnyTLS"
     type: anytls
     server: {STATIC_IP}
@@ -187,10 +195,10 @@ proxy-groups:
   - name: "🚀 代理策略"
     type: select
     proxies:
+      - "US-HY2"
       - "US-Reality"
       - "⚡ 自动测速"
       - "🔧 手动选择"{CDN_REF}
-      - "US-HY2"
       - "US-AnyTLS"
       - DIRECT
 
@@ -446,6 +454,7 @@ for dev in devices:
         HY2_PASSWORD=f"{dev}:{hy2pw}",
         CDN_PROXY=cdn_proxy_block(dev_cdn_uuid),
         CDN_REF=CDN_REF,
+        HY2_BW=HY2_BW,
         **env,
     )
     path = OUT_DIR / f"{dev}.yaml"

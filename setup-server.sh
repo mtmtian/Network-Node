@@ -13,13 +13,25 @@ ENV_FILE="${1:-/tmp/server-env.sh}"
 
 vv() { eval "printf '%s' \"\${$1:-}\""; }   # indirect var read
 
-echo "=== [1/8] Enabling BBR ==="
-if ! grep -q "net.ipv4.tcp_congestion_control=bbr" /etc/sysctl.conf; then
+echo "=== [1/8] Enabling BBR + high-BDP TCP tuning ==="
+# marker "v2" 让本块在已部署（已有旧 "# VPN tuning" 块）的机器上也能追加；
+# sysctl 后写覆盖先写，重复的 bbr/fq 无害。跨太平洋 RTT ~150ms 下，默认 6MB 缓冲
+# 撑不满带宽时延积，放大 rmem/wmem 才能让 BBR 填满管道（提升 Reality/AnyTLS 吞吐）。
+if ! grep -q "# VPN tuning v2" /etc/sysctl.conf; then
   sudo tee -a /etc/sysctl.conf > /dev/null <<'SYSCTL'
 
-# VPN tuning
+# VPN tuning v2
 net.core.default_qdisc=fq
 net.ipv4.tcp_congestion_control=bbr
+net.core.rmem_max=67108864
+net.core.wmem_max=67108864
+net.ipv4.tcp_rmem=4096 87380 67108864
+net.ipv4.tcp_wmem=4096 65536 67108864
+net.ipv4.tcp_mtu_probing=1
+net.ipv4.tcp_slow_start_after_idle=0
+net.ipv4.tcp_notsent_lowat=131072
+net.core.netdev_max_backlog=250000
+net.ipv4.tcp_fastopen=3
 SYSCTL
 fi
 sudo sysctl -p > /dev/null
