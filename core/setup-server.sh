@@ -5,10 +5,14 @@
 set -euo pipefail
 export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH"
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+. "$SCRIPT_DIR/download.sh"
+
 ENV_FILE="${1:-/tmp/server-env.sh}"
 # shellcheck disable=SC1090
 . "$ENV_FILE"
-: "${REALITY_PORT:?}" "${REALITY_SNI:?}" "${REALITY_SHORTID:?}" "${DEVICES:?}"
+: "${REALITY_PORT:?}" "${REALITY_TARGET:?}" "${REALITY_SHORTID:?}" "${DEVICES:?}"
+REALITY_SNI="${REALITY_SNI:-}"
 : "${HY2_PORT:?}" "${ANYTLS_PORT:?}" "${ANYTLS_PASS:?}"
 
 vv() { eval "printf '%s' \"\${$1:-}\""; }   # indirect var read
@@ -49,30 +53,30 @@ case "$ARCH" in
   aarch64) XRAY_ZIP="Xray-linux-arm64-v8a.zip" ;;
   *) echo "Unsupported arch: $ARCH"; exit 1 ;;
 esac
-curl -fsSL -o /tmp/xray.zip \
+download_file /tmp/xray.zip \
   "https://github.com/XTLS/Xray-core/releases/latest/download/${XRAY_ZIP}"
 sudo unzip -oq /tmp/xray.zip -d /usr/local/bin xray
 sudo chmod 0755 /usr/local/bin/xray
-/usr/local/bin/xray version | head -1
+print_first_line /usr/local/bin/xray version
 
 echo "=== [4/8] Installing Hysteria2 ==="
 case "$ARCH" in
   x86_64)  HY2_BIN="hysteria-linux-amd64" ;;
   aarch64) HY2_BIN="hysteria-linux-arm64" ;;
 esac
-curl -fsSL -o /tmp/hysteria \
+download_file /tmp/hysteria \
   "https://github.com/apernet/hysteria/releases/latest/download/${HY2_BIN}"
 sudo install -m 0755 /tmp/hysteria /usr/local/bin/hysteria
-/usr/local/bin/hysteria version | head -1
+print_first_line /usr/local/bin/hysteria version
 
 echo "=== [5/8] Installing AnyTLS ==="
 case "$ARCH" in
   x86_64)  AT_ARCH="amd64" ;;
   aarch64) AT_ARCH="arm64" ;;
 esac
-AT_VER="$(curl -fsSL https://api.github.com/repos/anytls/anytls-go/releases/latest | grep '"tag_name"' | head -1 | cut -d'"' -f4 | sed 's/^v//')"
+AT_VER="$(fetch_url https://api.github.com/repos/anytls/anytls-go/releases/latest | python3 -c 'import json,sys; print(json.load(sys.stdin)["tag_name"].removeprefix("v"))')"
 [ -n "$AT_VER" ] || { echo "Failed to fetch anytls latest version"; exit 1; }
-curl -fsSL -o /tmp/anytls.zip \
+download_file /tmp/anytls.zip \
   "https://github.com/anytls/anytls-go/releases/download/v${AT_VER}/anytls_${AT_VER}_linux_${AT_ARCH}.zip"
 sudo rm -rf /tmp/anytls-extract
 sudo unzip -oq /tmp/anytls.zip -d /tmp/anytls-extract
@@ -85,10 +89,10 @@ if [ "${CDN_ENABLE:-false}" = "true" ]; then
     x86_64)  CF_BIN="cloudflared-linux-amd64" ;;
     aarch64) CF_BIN="cloudflared-linux-arm64" ;;
   esac
-  curl -fsSL -o /tmp/cloudflared \
+  download_file /tmp/cloudflared \
     "https://github.com/cloudflare/cloudflared/releases/latest/download/${CF_BIN}"
   sudo install -m 0755 /tmp/cloudflared /usr/local/bin/cloudflared
-  /usr/local/bin/cloudflared --version | head -1
+  print_first_line /usr/local/bin/cloudflared --version
 fi
 
 echo "=== [6/8] Generating Reality keypair ==="
@@ -106,6 +110,12 @@ REALITY_PUBLIC="$(echo "$KEYS"  | grep -iE 'public|password' | awk '{print $NF}'
 [ -n "$REALITY_PRIVATE" ] && [ -n "$REALITY_PUBLIC" ] || { echo "x25519 keygen failed"; exit 1; }
 
 echo "=== [7/8] Writing server configs ==="
+for svc_user in xray hysteria anytls; do
+  if ! id "$svc_user" >/dev/null 2>&1; then
+    sudo useradd --system --no-create-home --shell /usr/sbin/nologin "$svc_user"
+  fi
+done
+
 xray_clients=""; hy2_users=""; first=1
 for d in $DEVICES; do
   uuid="$(vv "REALITY_UUID_$d")"
@@ -165,12 +175,11 @@ sudo tee /usr/local/etc/xray/config.json > /dev/null <<JSON
         "decryption": "none"
       },
       "streamSettings": {
-        "network": "tcp",
+        "network": "raw",
         "security": "reality",
         "realitySettings": {
           "show": false,
-          "dest": "${REALITY_SNI}:443",
-          "xver": 0,
+          "target": "${REALITY_TARGET}",
           "serverNames": ["${REALITY_SNI}"],
           "privateKey": "${REALITY_PRIVATE}",
           "shortIds": ["${REALITY_SHORTID}"]
@@ -181,7 +190,8 @@ sudo tee /usr/local/etc/xray/config.json > /dev/null <<JSON
   "outbounds": [{"protocol": "freedom"}]
 }
 JSON
-sudo chmod 644 /usr/local/etc/xray/config.json
+sudo chown root:xray /usr/local/etc/xray/config.json
+sudo chmod 640 /usr/local/etc/xray/config.json
 
 sudo mkdir -p /etc/hysteria
 if [ ! -f /etc/hysteria/cert.crt ] || [ ! -f /etc/hysteria/cert.key ]; then
@@ -190,7 +200,8 @@ if [ ! -f /etc/hysteria/cert.crt ] || [ ! -f /etc/hysteria/cert.key ]; then
     -out /etc/hysteria/cert.crt -subj "/CN=www.bing.com" >/dev/null 2>&1
   sudo mv /tmp/hy2.key /etc/hysteria/cert.key
 fi
-sudo chmod 644 /etc/hysteria/cert.crt /etc/hysteria/cert.key
+sudo chown root:hysteria /etc/hysteria/cert.crt /etc/hysteria/cert.key
+sudo chmod 640 /etc/hysteria/cert.crt /etc/hysteria/cert.key
 
 sudo tee /etc/hysteria/config.yaml > /dev/null <<YAML
 listen: :${HY2_PORT}
@@ -209,7 +220,24 @@ masquerade:
     url: https://www.bing.com
     rewriteHost: true
 YAML
-sudo chmod 644 /etc/hysteria/config.yaml
+sudo chown root:hysteria /etc/hysteria/config.yaml
+sudo chmod 640 /etc/hysteria/config.yaml
+sudo chown root:hysteria /etc/hysteria
+sudo chmod 750 /etc/hysteria
+
+sudo mkdir -p /etc/anytls
+printf 'ANYTLS_PASS=%s\n' "$ANYTLS_PASS" | sudo tee /etc/anytls/env > /dev/null
+sudo chown -R root:anytls /etc/anytls
+sudo chmod 750 /etc/anytls
+sudo chmod 640 /etc/anytls/env
+sudo tee /usr/local/sbin/anytls-run > /dev/null <<UNIT
+#!/bin/sh
+set -eu
+. /etc/anytls/env
+exec /usr/local/bin/anytls-server -l 0.0.0.0:${ANYTLS_PORT} -p "\$ANYTLS_PASS"
+UNIT
+sudo chown root:root /usr/local/sbin/anytls-run
+sudo chmod 755 /usr/local/sbin/anytls-run
 
 # Remove the old Shadowsocks service if this VM was deployed by an earlier kit version.
 sudo systemctl disable --now ssserver >/dev/null 2>&1 || true
@@ -223,6 +251,8 @@ Wants=network-online.target
 
 [Service]
 Type=simple
+User=xray
+Group=xray
 ExecStart=/usr/local/bin/xray run -c /usr/local/etc/xray/config.json
 Restart=on-failure
 RestartSec=5
@@ -234,7 +264,6 @@ ProtectSystem=strict
 ProtectHome=true
 PrivateTmp=true
 ReadOnlyPaths=/usr/local/etc/xray
-DynamicUser=true
 
 [Install]
 WantedBy=multi-user.target
@@ -248,6 +277,8 @@ Wants=network-online.target
 
 [Service]
 Type=simple
+User=hysteria
+Group=hysteria
 ExecStart=/usr/local/bin/hysteria server -c /etc/hysteria/config.yaml
 Restart=on-failure
 RestartSec=5
@@ -259,7 +290,6 @@ ProtectSystem=strict
 ProtectHome=true
 PrivateTmp=true
 ReadOnlyPaths=/etc/hysteria
-DynamicUser=true
 
 [Install]
 WantedBy=multi-user.target
@@ -273,7 +303,9 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/anytls-server -l 0.0.0.0:${ANYTLS_PORT} -p ${ANYTLS_PASS}
+User=anytls
+Group=anytls
+ExecStart=/usr/local/sbin/anytls-run
 Restart=on-failure
 RestartSec=5
 LimitNOFILE=1048576
@@ -281,7 +313,7 @@ NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true
 PrivateTmp=true
-DynamicUser=true
+ReadOnlyPaths=/etc/anytls
 
 [Install]
 WantedBy=multi-user.target

@@ -19,7 +19,8 @@ class GenerateClashConfigTest(unittest.TestCase):
                 "\n".join(
                     [
                         "REALITY_PORT=443",
-                        "REALITY_SNI=www.microsoft.com",
+                        "REALITY_TARGET=1.1.1.1:443",
+                        "REALITY_SNI=",
                         "DEVICES=mac phone",
                         "CDN_ENABLE=false",
                     ]

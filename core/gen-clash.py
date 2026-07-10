@@ -36,7 +36,7 @@ env.update(load_kv(ROOT / ".secrets.env"))
 
 REQUIRED = [
     "STATIC_IP",
-    "REALITY_PORT", "REALITY_SNI", "REALITY_PUBLIC", "REALITY_SHORTID",
+    "REALITY_PORT", "REALITY_PUBLIC", "REALITY_SHORTID",
     "HY2_PORT",
     "ANYTLS_PORT", "ANYTLS_PASS",
 ]
@@ -96,14 +96,22 @@ log-level: info
 ipv6: false
 geodata-mode: true
 find-process-mode: strict
-global-client-fingerprint: chrome
-
 sniffer:
   enable: true
-  override-destination: true
   sniff:
-    - tls
-    - http
+    HTTP:
+      ports:
+        - 80
+        - 8080-8880
+      override-destination: true
+    TLS:
+      ports:
+        - 443
+        - 8443
+    QUIC:
+      ports:
+        - 443
+        - 8443
 
 skip-proxy:
   - 127.0.0.1
@@ -164,8 +172,8 @@ proxies:
     tls: true
     udp: true
     flow: xtls-rprx-vision
-    servername: {REALITY_SNI}
-    sni: {REALITY_SNI}
+    servername: "{REALITY_SNI}"
+    sni: "{REALITY_SNI}"
     client-fingerprint: chrome
     reality-opts:
       public-key: {REALITY_PUBLIC}

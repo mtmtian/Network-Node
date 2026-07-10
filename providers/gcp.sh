@@ -40,11 +40,11 @@ provider_provision() {
 }
 
 provider_install() {
-  local setup_script="$1" env_file="$2" attempt scp_ok=0
+  local setup_script="$1" download_script="$2" env_file="$3" attempt scp_ok=0
   local -a gc=(gcloud --project "$PROJECT_ID" --quiet)
   for attempt in 1 2 3; do
     if "${gc[@]}" compute scp --tunnel-through-iap --zone "$ZONE" \
-      "$setup_script" "$env_file" "$INSTANCE_NAME":/tmp/ 2>/dev/null; then
+      "$setup_script" "$download_script" "$env_file" "$INSTANCE_NAME":/tmp/ 2>/dev/null; then
       scp_ok=1; break
     fi
     warn "SSH 尚未就绪，等待重试 ($attempt/3)..."
@@ -52,7 +52,7 @@ provider_install() {
   done
   [ "$scp_ok" -eq 1 ] || die "无法通过 IAP SSH 连接到 VM"
   "${gc[@]}" compute ssh --tunnel-through-iap --zone "$ZONE" "$INSTANCE_NAME" \
-    --command 'bash /tmp/setup-server.sh /tmp/server-env.sh; rc=$?; rm -f /tmp/server-env.sh /tmp/setup-server.sh; exit $rc'
+    --command 'bash /tmp/setup-server.sh /tmp/server-env.sh; rc=$?; rm -f /tmp/server-env.sh /tmp/setup-server.sh /tmp/download.sh; exit $rc'
 }
 
 provider_print_summary() {

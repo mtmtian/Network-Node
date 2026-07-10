@@ -81,14 +81,14 @@ REMOTE_FIREWALL
 }
 
 provider_install() {
-  local setup_script="$1" env_file="$2"
-  scp "${VPS_SCP_OPTS[@]}" "$setup_script" "$env_file" "${VPS_ADMIN_USER}@${VPS_HOST}:/tmp/"
+  local setup_script="$1" download_script="$2" env_file="$3"
+  scp "${VPS_SCP_OPTS[@]}" "$setup_script" "$download_script" "$env_file" "${VPS_ADMIN_USER}@${VPS_HOST}:/tmp/"
   ssh "${VPS_SSH_OPTS[@]}" "${VPS_ADMIN_USER}@${VPS_HOST}" \
-    'sudo bash /tmp/setup-server.sh /tmp/server-env.sh; rc=$?; sudo rm -f /tmp/server-env.sh /tmp/setup-server.sh; exit $rc'
+    'sudo bash /tmp/setup-server.sh /tmp/server-env.sh; rc=$?; sudo rm -f /tmp/server-env.sh /tmp/setup-server.sh /tmp/download.sh; exit $rc'
 }
 
 provider_print_summary() {
   echo "  Provider  : Generic VPS"
   echo "  服务器 IP : $VPS_HOST"
-  echo "  SSH 用户  : $VPS_ADMIN_USER（root 已禁用）"
+  echo "  SSH 用户  : ${VPS_ADMIN_USER}（root 已禁用）"
 }

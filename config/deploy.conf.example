@@ -13,9 +13,11 @@ IP_NAME=vpn-us-ip
 MACHINE_TYPE=e2-micro
 NETWORK_TIER=PREMIUM
 
-# Reality 主节点端口与伪装域名（443 最隐蔽；SNI 用一个海外大站的真实域名）
+# Reality 主节点端口、目标与 SNI。1.1.1.1 使用 IP 证书，因此 SNI 留空。
+# target 与 SNI 分开，避免目标站 TLS 行为变化导致认证回落。
 REALITY_PORT=443
-REALITY_SNI=www.microsoft.com
+REALITY_TARGET=1.1.1.1:443
+REALITY_SNI=
 
 # Hysteria2 / AnyTLS 兜底端口。留空 = 自动随机高位端口（写入 .secrets.env）
 HY2_PORT=

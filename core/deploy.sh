@@ -6,7 +6,7 @@
 build_server_env() {
   local target="$1" k d
   {
-    for k in REALITY_PORT REALITY_SNI DEVICES; do
+    for k in REALITY_PORT REALITY_TARGET REALITY_SNI DEVICES; do
       printf "export %s='%s'\n" "$k" "$(varval "$k")"
     done
     for k in REALITY_SHORTID HY2_PORT ANYTLS_PORT ANYTLS_PASS; do
@@ -32,6 +32,10 @@ cleanup_deploy_tmp() {
   [ -z "${DEPLOY_TMP_DIR:-}" ] || rm -rf "$DEPLOY_TMP_DIR"
 }
 
+redact_server_output() {
+  sed -E 's/^(REALITY_PUBLIC_KEY=).*/\1[redacted]/'
+}
+
 run_deploy() {
   printf '\n\033[1;35m=== %s ===\033[0m\n\n' "$PROVIDER_TITLE"
 
@@ -39,6 +43,8 @@ run_deploy() {
   provider_preflight
   provider_configure
   load_conf
+  REALITY_TARGET="${REALITY_TARGET:-${REALITY_SNI}:443}"
+  export REALITY_TARGET
   ok "$PROVIDER_DESCRIPTION  设备=[$DEVICES]"
 
   bash "$PROJECT_DIR/core/secrets.sh"
@@ -60,10 +66,10 @@ run_deploy() {
 
   say "上传并执行服务端安装脚本（首次通常 2-5 分钟）"
   set +e
-  srv_out="$(provider_install "$PROJECT_DIR/core/setup-server.sh" "$srv_env" 2>&1)"
+  srv_out="$(provider_install "$PROJECT_DIR/core/setup-server.sh" "$PROJECT_DIR/core/download.sh" "$srv_env" 2>&1)"
   rc=$?
   set -e
-  echo "$srv_out" | sed 's/^/    │ /'
+  echo "$srv_out" | redact_server_output | sed 's/^/    │ /'
   [ "$rc" -eq 0 ] || die "远端安装失败（见上方日志）"
 
   pub="$(echo "$srv_out" | grep '^REALITY_PUBLIC_KEY=' | tail -1 | cut -d= -f2)"
