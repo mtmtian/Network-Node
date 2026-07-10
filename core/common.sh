@@ -3,6 +3,8 @@
 PROJECT_DIR="${PROJECT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 PROFILE_NAME="${PROFILE_NAME:-gcloud}"
 STATE_DIR="${NETWORK_NODE_STATE_DIR:-$PROJECT_DIR/profiles/$PROFILE_NAME}"
+CLIENTS_DIR="${NETWORK_NODE_CLIENTS_DIR:-$STATE_DIR/clients}"
+SSH_DIR="$STATE_DIR/ssh"
 CONF_FILE="$STATE_DIR/deploy.conf"
 SECRETS_FILE="$STATE_DIR/.secrets.env"
 CONFIG_TEMPLATE="$PROJECT_DIR/config/deploy.conf.example"

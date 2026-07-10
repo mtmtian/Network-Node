@@ -21,7 +21,7 @@ STATE_DIR = pathlib.Path(
         ROOT / "profiles" / PROFILE if PROFILE else ROOT,
     )
 )
-OUT_DIR = STATE_DIR / "clash-configs"
+OUT_DIR = pathlib.Path(os.environ.get("NETWORK_NODE_CLIENTS_DIR", STATE_DIR / "clients"))
 
 
 def load_kv(path):
@@ -457,7 +457,8 @@ rules:
 
 OUT_DIR.mkdir(parents=True, exist_ok=True, mode=0o700)
 OUT_DIR.chmod(0o700)
-for stale in OUT_DIR.glob("*.yaml"):
+stale_pattern = f"{PROFILE}-*.yaml" if PROFILE else "*.yaml"
+for stale in OUT_DIR.glob(stale_pattern):
     stale.unlink()
 for dev in devices:
     uuid = env.get(f"REALITY_UUID_{dev}")

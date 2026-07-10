@@ -37,11 +37,14 @@ profiles/
 ├── gcloud/
 │   ├── deploy.conf
 │   ├── .secrets.env
-│   └── clash-configs/gcloud-{mac,iphone}.yaml
+│   └── clients/gcloud-{mac,iphone}.yaml
 └── dmit/
     ├── deploy.conf
     ├── .secrets.env
-    └── clash-configs/dmit-{mac,iphone}.yaml
+    ├── clients/dmit-{mac,iphone}.yaml
+    └── ssh/id_rsa.pem
 ```
 
 The entire `profiles/` tree is gitignored. This keeps host lifecycle state and credentials separate while both providers continue to consume the same protocol installer and routing-rule template.
+
+Each provider profile owns its state, client outputs, and optional host credentials. The generator removes only YAML files prefixed with the active profile name, so running one adapter cannot overwrite another adapter's outputs.

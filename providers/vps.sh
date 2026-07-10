@@ -4,12 +4,17 @@ PROVIDER_TITLE="VPS 代理一键部署"
 PROVIDER_DESCRIPTION="provider=VPS"
 
 provider_init() {
-  VPS_HOST="${VPS_HOST:-${1:-}}"
+  local profile_key="$SSH_DIR/id_rsa.pem"
+  VPS_HOST="${VPS_HOST:-${1:-$(secret_get STATIC_IP)}}"
   [ -n "$VPS_HOST" ] || die "用法：./deploy-vps.sh <VPS_PUBLIC_IP>"
   VPS_BOOTSTRAP_USER="${VPS_BOOTSTRAP_USER:-root}"
   VPS_ADMIN_USER="${VPS_ADMIN_USER:-mt}"
   VPS_SSH_PORT="${VPS_SSH_PORT:-22}"
-  VPS_SSH_KEY="${VPS_SSH_KEY:-$HOME/.ssh/id_ed25519}"
+  if [ -f "$profile_key" ]; then
+    VPS_SSH_KEY="${VPS_SSH_KEY:-$profile_key}"
+  else
+    VPS_SSH_KEY="${VPS_SSH_KEY:-$HOME/.ssh/id_ed25519}"
+  fi
   VPS_SSH_OPTS=(-i "$VPS_SSH_KEY" -p "$VPS_SSH_PORT" -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10)
   VPS_SCP_OPTS=(-i "$VPS_SSH_KEY" -P "$VPS_SSH_PORT" -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10)
 }

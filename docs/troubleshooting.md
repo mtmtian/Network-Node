@@ -13,9 +13,9 @@ This note records a real failure mode: the client showed proxy node timeouts, wh
 
 ### Root Cause
 
-The generated client YAML pointed to an outdated IP address in `.secrets.env`:
+The generated client YAML pointed to an outdated IP address in `profiles/gcloud/.secrets.env`:
 
-- `STATIC_IP` in `.secrets.env` had an old value.
+- `STATIC_IP` in `profiles/gcloud/.secrets.env` had an old value.
 - The existing VM had a different current external IP.
 - Service credentials and ports were correct, but clients were connecting to the wrong address.
 
@@ -23,7 +23,14 @@ When the client reports the node itself as timeout, check the server address fir
 
 ### Checks
 
-Run these locally after loading `deploy.conf` and `.secrets.env`.
+Run these locally after loading the GCloud profile state.
+
+```bash
+set -a
+. profiles/gcloud/deploy.conf
+. profiles/gcloud/.secrets.env
+set +a
+```
 
 ```bash
 gcloud --project "$PROJECT_ID" compute instances describe "$INSTANCE_NAME" \
@@ -32,7 +39,7 @@ gcloud --project "$PROJECT_ID" compute instances describe "$INSTANCE_NAME" \
 ```
 
 ```bash
-grep '^STATIC_IP=' .secrets.env
+grep '^STATIC_IP=' profiles/gcloud/.secrets.env
 ```
 
 The two IPs must match.
@@ -62,11 +69,11 @@ gcloud --project "$PROJECT_ID" compute ssh "$INSTANCE_NAME" \
 
 ### Fix
 
-1. Update `.secrets.env` so `STATIC_IP` matches the VM external IP.
-2. Regenerate client configs:
+1. Update `profiles/gcloud/.secrets.env` so `STATIC_IP` matches the VM external IP.
+2. Regenerate GCloud client configs:
 
 ```bash
-python3 core/gen-clash.py
+NETWORK_NODE_PROFILE=gcloud python3 core/gen-clash.py
 ```
 
 3. Re-import the regenerated YAML into the client. Delete the old client profile first if the app caches old proxy entries.
@@ -75,21 +82,21 @@ Restarting the VM is not required when only the generated client YAML is wrong. 
 
 ### Prevention
 
-- Treat each `profiles/<provider>/` directory as one local state bundle; never mix GCloud and DMIT state files.
+- Treat each `profiles/<provider>/` directory as one local state bundle; never mix GCloud and DMIT state, `clients/`, or `ssh/` files.
 - If a static IP is deleted or the VM external IP changes, regenerate client YAML immediately.
-- Do not commit `.secrets.env` or generated client YAML; they contain real server details and credentials.
+- Do not commit profile `.secrets.env`, SSH keys, or generated client YAML; they contain real server details and credentials.
 
 ## 中文总结：节点 Timeout 但服务端正常
 
 这次问题不是规则集导致的。客户端显示“节点 timeout”时，优先怀疑节点地址、端口、防火墙、服务状态或协议兼容；规则集只影响连接建立后的分流。
 
-本次根因是本地 `.secrets.env` 里的 `STATIC_IP` 仍是旧地址，而 GCP 上现有 VM 的外部 IP 已变化。服务端 `xray`、`hysteria`、`anytls` 都正常运行，端口也开放，密钥/UUID 与本地配置一致；客户端只是连到了错误地址。
+本次根因是本地 `profiles/gcloud/.secrets.env` 里的 `STATIC_IP` 仍是旧地址，而 GCP 上现有 VM 的外部 IP 已变化。服务端 `xray`、`hysteria`、`anytls` 都正常运行，端口也开放，密钥/UUID 与本地配置一致；客户端只是连到了错误地址。
 
 处理方式：
 
-1. 对比 GCP VM 当前外部 IP 和 `.secrets.env` 里的 `STATIC_IP`。
-2. 把 `.secrets.env` 更新为当前 VM IP。
-3. 重新运行 `python3 core/gen-clash.py`。
+1. 对比 GCP VM 当前外部 IP 和 `profiles/gcloud/.secrets.env` 里的 `STATIC_IP`。
+2. 把 `profiles/gcloud/.secrets.env` 更新为当前 VM IP。
+3. 运行 `NETWORK_NODE_PROFILE=gcloud python3 core/gen-clash.py`。
 4. 在客户端删除旧 profile 后重新导入生成的 YAML。
 
 只修正客户端 YAML 时不需要重启 VM。只有服务端端口、凭据或 systemd 服务配置发生变化时，才需要重跑原平台入口或重启相关服务。
