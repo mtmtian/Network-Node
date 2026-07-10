@@ -1,8 +1,10 @@
 # shared helpers — source this file. POSIX-bash 3.2 compatible (macOS default).
 
 PROJECT_DIR="${PROJECT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
-CONF_FILE="$PROJECT_DIR/deploy.conf"
-SECRETS_FILE="$PROJECT_DIR/.secrets.env"
+PROFILE_NAME="${PROFILE_NAME:-gcloud}"
+STATE_DIR="${NETWORK_NODE_STATE_DIR:-$PROJECT_DIR/profiles/$PROFILE_NAME}"
+CONF_FILE="$STATE_DIR/deploy.conf"
+SECRETS_FILE="$STATE_DIR/.secrets.env"
 CONFIG_TEMPLATE="$PROJECT_DIR/config/deploy.conf.example"
 
 # --- logging ---

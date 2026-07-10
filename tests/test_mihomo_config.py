@@ -31,6 +31,8 @@ class MihomoConfigIntegrationTest(unittest.TestCase):
             )
             env = os.environ.copy()
             env["NETWORK_NODE_ROOT"] = str(root)
+            env["NETWORK_NODE_STATE_DIR"] = str(root)
+            env["NETWORK_NODE_PROFILE"] = "test"
             generated = subprocess.run(
                 [os.environ.get("PYTHON", "python3"), str(PROJECT_ROOT / "core" / "gen-clash.py")],
                 env=env,
@@ -40,7 +42,7 @@ class MihomoConfigIntegrationTest(unittest.TestCase):
             )
             self.assertEqual(generated.returncode, 0, generated.stderr)
 
-            config = root / "clash-configs" / "mac.yaml"
+            config = root / "clash-configs" / "test-mac.yaml"
             parsed = subprocess.run(
                 [mihomo, "-t", "-d", tmp, "-f", str(config)],
                 text=True,

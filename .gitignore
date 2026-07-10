@@ -2,6 +2,7 @@
 .secrets.env
 deploy.conf
 clash-configs/
+profiles/
 
 # Personal planning docs — not part of the shareable tool
 VPN方案设计.md

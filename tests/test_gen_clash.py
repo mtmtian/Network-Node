@@ -47,6 +47,8 @@ class GenerateClashConfigTest(unittest.TestCase):
 
             env = os.environ.copy()
             env["NETWORK_NODE_ROOT"] = str(root)
+            env["NETWORK_NODE_STATE_DIR"] = str(root)
+            env["NETWORK_NODE_PROFILE"] = "test"
             result = subprocess.run(
                 [sys.executable, str(GENERATOR)],
                 env=env,
@@ -57,9 +59,11 @@ class GenerateClashConfigTest(unittest.TestCase):
 
             self.assertEqual(result.returncode, 0, result.stderr)
             outputs = sorted((root / "clash-configs").glob("*.yaml"))
-            self.assertEqual([path.name for path in outputs], ["mac.yaml", "phone.yaml"])
+            self.assertEqual([path.name for path in outputs], ["test-mac.yaml", "test-phone.yaml"])
 
-            mac = (root / "clash-configs" / "mac.yaml").read_text()
+            mac_path = root / "clash-configs" / "test-mac.yaml"
+            mac = mac_path.read_text()
+            self.assertEqual(mac_path.stat().st_mode & 0o777, 0o600)
             self.assertIn("server: 203.0.113.10", mac)
             self.assertIn('name: "US-Reality"', mac)
             self.assertIn('name: "US-HY2"', mac)

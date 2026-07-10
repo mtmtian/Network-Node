@@ -77,7 +77,10 @@ run_deploy() {
   setkv REALITY_PUBLIC "$pub"
 
   say "生成 Clash/Mihomo 配置"
-  python3 "$PROJECT_DIR/core/gen-clash.py"
+  NETWORK_NODE_ROOT="$PROJECT_DIR" \
+    NETWORK_NODE_STATE_DIR="$STATE_DIR" \
+    NETWORK_NODE_PROFILE="$PROFILE_NAME" \
+    python3 "$PROJECT_DIR/core/gen-clash.py"
 
   printf '\n\033[1;32m=== 部署完成 ===\033[0m\n'
   provider_print_summary
@@ -87,5 +90,5 @@ run_deploy() {
   if [ "${CDN_ENABLE:-false}" = "true" ]; then
     echo "  CDN       : $CDN_HOSTNAME"
   fi
-  echo "  配置文件  : $PROJECT_DIR/clash-configs/*.yaml"
+  echo "  配置文件  : $STATE_DIR/clash-configs/${PROFILE_NAME}-*.yaml"
 }

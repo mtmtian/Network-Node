@@ -45,7 +45,7 @@ ensure_secret REALITY_SHORTID "$(rand_short)"
 ensure_secret ANYTLS_PASS     "$(rand_psk)"
 
 # 每设备独立 Reality UUID 与 Hysteria2 密码（可单独作废）
-for d in ${DEVICES:-mac iphone ipad laptop spare}; do
+for d in ${DEVICES:-mac iphone}; do
   ensure_secret "REALITY_UUID_$d" "$(gen_uuid)"
   ensure_secret "HY2_PASS_$d"     "$(rand_psk)"
 done
@@ -59,7 +59,7 @@ if [ "${CDN_ENABLE:-false}" = "true" ]; then
     ensure_secret CDN_WS_PATH "$(openssl rand -hex 12)"
   fi
   # 每设备独立 CDN UUID，与 Reality UUID 不同 -> 两条链路凭据隔离
-  for d in ${DEVICES:-mac iphone ipad laptop spare}; do
+  for d in ${DEVICES:-mac iphone}; do
     ensure_secret "CDN_UUID_$d" "$(gen_uuid)"
   done
   # CF_API_TOKEN 由用户提供（建隧道用），不自动生成；缺失则提示但不中断

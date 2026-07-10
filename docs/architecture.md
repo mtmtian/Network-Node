@@ -30,4 +30,18 @@ entry point -> provider adapter -> shared secrets -> provider host setup
             -> shared server install -> shared client config generation
 ```
 
-`deploy.conf`, `.secrets.env`, and `clash-configs/` remain at the repository root. The latter two contain credentials and are gitignored.
+Provider state is isolated below `profiles/`:
+
+```text
+profiles/
+├── gcloud/
+│   ├── deploy.conf
+│   ├── .secrets.env
+│   └── clash-configs/gcloud-{mac,iphone}.yaml
+└── dmit/
+    ├── deploy.conf
+    ├── .secrets.env
+    └── clash-configs/dmit-{mac,iphone}.yaml
+```
+
+The entire `profiles/` tree is gitignored. This keeps host lifecycle state and credentials separate while both providers continue to consume the same protocol installer and routing-rule template.

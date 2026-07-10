@@ -32,7 +32,7 @@ HY2_UP=
 HY2_DOWN=
 
 # 要生成客户端配置的设备名（空格分隔，可自由增删）
-DEVICES="mac iphone ipad laptop spare"
+DEVICES="mac iphone"
 
 # ── Cloudflare CDN 套娃出口（可选）──
 # 开启后多一条出口：客户端 → Cloudflare 边缘 → Cloudflare Tunnel → cloudflared@VM

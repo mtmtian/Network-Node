@@ -23,11 +23,13 @@ provider_preflight() {
 }
 
 provider_configure() {
+  mkdir -p "$STATE_DIR"
+  chmod 700 "$STATE_DIR"
   if [ ! -f "$CONF_FILE" ]; then
     cp "$CONFIG_TEMPLATE" "$CONF_FILE"
     sed -i.bak -e 's|^PROJECT_ID=.*|PROJECT_ID=vps|' "$CONF_FILE"
     rm -f "$CONF_FILE.bak"
-    ok "已创建 deploy.conf；可按需修改设备列表和端口"
+    ok "已创建 profiles/$PROFILE_NAME/deploy.conf；可按需修改端口"
   fi
   load_conf
   PROVIDER_DESCRIPTION="provider=VPS  主机=$VPS_HOST"

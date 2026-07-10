@@ -14,7 +14,14 @@ import os
 import sys
 
 ROOT = pathlib.Path(os.environ.get("NETWORK_NODE_ROOT", pathlib.Path(__file__).resolve().parent.parent))
-OUT_DIR = ROOT / "clash-configs"
+PROFILE = os.environ.get("NETWORK_NODE_PROFILE", "").strip()
+STATE_DIR = pathlib.Path(
+    os.environ.get(
+        "NETWORK_NODE_STATE_DIR",
+        ROOT / "profiles" / PROFILE if PROFILE else ROOT,
+    )
+)
+OUT_DIR = STATE_DIR / "clash-configs"
 
 
 def load_kv(path):
@@ -31,8 +38,8 @@ def load_kv(path):
 
 
 env = {}
-env.update(load_kv(ROOT / "deploy.conf"))
-env.update(load_kv(ROOT / ".secrets.env"))
+env.update(load_kv(STATE_DIR / "deploy.conf"))
+env.update(load_kv(STATE_DIR / ".secrets.env"))
 
 REQUIRED = [
     "STATIC_IP",
@@ -44,7 +51,7 @@ missing = [k for k in REQUIRED if not env.get(k)]
 if missing:
     sys.exit(f"ERROR: 缺少必要变量 {missing}（应由部署入口自动生成，请检查 .secrets.env）")
 
-devices = env.get("DEVICES", "mac iphone ipad laptop spare").split()
+devices = env.get("DEVICES", "mac iphone").split()
 
 # ── CDN 套娃出口（可选）──
 # 启用条件：CDN_ENABLE=true 且 CF/WS 参数齐全。启用时把 US-CDN 作为一个普通节点
@@ -448,7 +455,10 @@ rules:
   - MATCH,🎯 兜底策略
 """
 
-OUT_DIR.mkdir(exist_ok=True)
+OUT_DIR.mkdir(parents=True, exist_ok=True, mode=0o700)
+OUT_DIR.chmod(0o700)
+for stale in OUT_DIR.glob("*.yaml"):
+    stale.unlink()
 for dev in devices:
     uuid = env.get(f"REALITY_UUID_{dev}")
     hy2pw = env.get(f"HY2_PASS_{dev}")
@@ -466,8 +476,10 @@ for dev in devices:
         HY2_BW=HY2_BW,
         **env,
     )
-    path = OUT_DIR / f"{dev}.yaml"
+    filename = f"{PROFILE}-{dev}.yaml" if PROFILE else f"{dev}.yaml"
+    path = OUT_DIR / filename
     path.write_text(yaml)
+    path.chmod(0o600)
     print(f"  wrote {path.name} ({len(yaml)} bytes)")
 
 print(f"\n全部 {len(devices)} 份配置已写入 {OUT_DIR}")

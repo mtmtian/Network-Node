@@ -11,6 +11,8 @@ provider_preflight() {
 
 provider_configure() {
   local default_proj in_proj proj in_region region in_zone zone in_dev devs
+  mkdir -p "$STATE_DIR"
+  chmod 700 "$STATE_DIR"
   if [ ! -f "$CONF_FILE" ]; then
     say "首次运行，开始交互式配置"
     default_proj="$(gcloud config get-value project 2>/dev/null || true)"
@@ -22,14 +24,14 @@ provider_configure() {
     region="${in_region:-us-west1}"
     printf '  可用区 ZONE [%s-a]: ' "$region"; read -r in_zone
     zone="${in_zone:-${region}-a}"
-    printf '  设备列表 [mac iphone ipad laptop spare]: '; read -r in_dev
-    devs="${in_dev:-mac iphone ipad laptop spare}"
+    printf '  设备列表 [mac iphone]: '; read -r in_dev
+    devs="${in_dev:-mac iphone}"
     sed -e "s|^PROJECT_ID=.*|PROJECT_ID=${proj}|" \
         -e "s|^REGION=.*|REGION=${region}|" \
         -e "s|^ZONE=.*|ZONE=${zone}|" \
         -e "s|^DEVICES=.*|DEVICES=\"${devs}\"|" \
         "$CONFIG_TEMPLATE" > "$CONF_FILE"
-    ok "已写入 deploy.conf"
+    ok "已写入 profiles/gcloud/deploy.conf"
   fi
   load_conf
   PROVIDER_DESCRIPTION="provider=GCP  项目=$PROJECT_ID  区域=$REGION"

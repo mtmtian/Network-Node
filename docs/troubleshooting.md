@@ -75,7 +75,7 @@ Restarting the VM is not required when only the generated client YAML is wrong. 
 
 ### Prevention
 
-- Treat `.secrets.env`, `deploy.conf`, and `clash-configs/` as one local state bundle.
+- Treat each `profiles/<provider>/` directory as one local state bundle; never mix GCloud and DMIT state files.
 - If a static IP is deleted or the VM external IP changes, regenerate client YAML immediately.
 - Do not commit `.secrets.env` or generated client YAML; they contain real server details and credentials.
 
