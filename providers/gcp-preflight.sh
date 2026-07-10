@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
-KIT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-. "$KIT_DIR/lib/common.sh"
+PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+. "$PROJECT_DIR/core/common.sh"
 
 say "预检环境依赖..."
 
@@ -27,7 +27,7 @@ else
   warn "缺少 uuidgen（将回退到 python3 生成 UUID）"
 fi
 
-[ "$missing" -eq 0 ] || die "请先安装上述缺失的依赖，再重新运行 ./deploy.sh"
+[ "$missing" -eq 0 ] || die "请先安装上述缺失的依赖，再重新运行 ./deploy-gcp.sh"
 
 # gcloud 登录态
 if gcloud auth list --filter=status:ACTIVE --format='value(account)' 2>/dev/null | grep -q .; then

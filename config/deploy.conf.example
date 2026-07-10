@@ -1,6 +1,6 @@
-# ── 复制本文件为 deploy.conf 后按需修改（deploy.sh 首次运行会自动帮你创建）──
+# ── 复制本文件为 deploy.conf 后按需修改（任一部署入口首次运行会自动创建）──
 
-# GCP 项目 ID（必填）。留空时 deploy.sh 会用 gcloud 当前项目并提示确认
+# GCP 项目 ID（仅 GCP 入口必填）。留空时 deploy-gcp.sh 会读取 gcloud 当前项目并提示确认
 PROJECT_ID=
 
 # 区域 / 可用区。Free Tier 免费区：us-west1 / us-central1 / us-east1

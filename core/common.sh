@@ -1,8 +1,9 @@
 # shared helpers — source this file. POSIX-bash 3.2 compatible (macOS default).
 
-KIT_DIR="${KIT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
-CONF_FILE="$KIT_DIR/deploy.conf"
-SECRETS_FILE="$KIT_DIR/.secrets.env"
+PROJECT_DIR="${PROJECT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+CONF_FILE="$PROJECT_DIR/deploy.conf"
+SECRETS_FILE="$PROJECT_DIR/.secrets.env"
+CONFIG_TEMPLATE="$PROJECT_DIR/config/deploy.conf.example"
 
 # --- logging ---
 say() { printf '\033[1;36m▸ %s\033[0m\n' "$*"; }

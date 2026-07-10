@@ -66,12 +66,12 @@ gcloud --project "$PROJECT_ID" compute ssh "$INSTANCE_NAME" \
 2. Regenerate client configs:
 
 ```bash
-python3 gen-clash.py
+python3 core/gen-clash.py
 ```
 
 3. Re-import the regenerated YAML into the client. Delete the old client profile first if the app caches old proxy entries.
 
-Restarting the VM is not required when only the generated client YAML is wrong. Re-run `./deploy.sh` or restart services only when the server-side ports, credentials, or service configs changed.
+Restarting the VM is not required when only the generated client YAML is wrong. Re-run the same provider entry point or restart services only when the server-side ports, credentials, or service configs changed.
 
 ### Prevention
 
@@ -89,9 +89,9 @@ Restarting the VM is not required when only the generated client YAML is wrong. 
 
 1. 对比 GCP VM 当前外部 IP 和 `.secrets.env` 里的 `STATIC_IP`。
 2. 把 `.secrets.env` 更新为当前 VM IP。
-3. 重新运行 `python3 gen-clash.py`。
+3. 重新运行 `python3 core/gen-clash.py`。
 4. 在客户端删除旧 profile 后重新导入生成的 YAML。
 
-只修正客户端 YAML 时不需要重启 VM。只有服务端端口、凭据或 systemd 服务配置发生变化时，才需要重跑 `./deploy.sh` 或重启相关服务。
+只修正客户端 YAML 时不需要重启 VM。只有服务端端口、凭据或 systemd 服务配置发生变化时，才需要重跑原平台入口或重启相关服务。
 
 风险点：如果 VM 没有绑定保留静态 IP，重启或重建后外部 IP 可能再次变化。生产使用建议确认静态 IP 存在且绑定到 VM。

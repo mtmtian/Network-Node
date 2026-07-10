@@ -2,10 +2,10 @@
 # 幂等地在 Cloudflare 上为本 VM 建一条独立 Tunnel + 配 ingress + DNS，
 # 并把 cloudflared 的 connector token 写入 .secrets.env（CF_TUNNEL_TOKEN）。
 # 需要 .secrets.env 里有 CF_API_TOKEN（权限 Account>Cloudflare Tunnel:Edit + Zone>DNS:Edit）。
-# 仅在 CDN_ENABLE=true 时由 deploy.sh 调用。
+# 仅在 CDN_ENABLE=true 时由共享部署流水线调用。
 set -euo pipefail
-KIT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-. "$KIT_DIR/lib/common.sh"
+PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+. "$PROJECT_DIR/core/common.sh"
 load_conf
 load_secrets
 

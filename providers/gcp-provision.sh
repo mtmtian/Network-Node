@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
-KIT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-. "$KIT_DIR/lib/common.sh"
+PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+. "$PROJECT_DIR/core/common.sh"
 load_conf
 load_secrets
 

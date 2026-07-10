@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
-KIT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-. "$KIT_DIR/lib/common.sh"
+PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+. "$PROJECT_DIR/core/common.sh"
 load_conf
 load_secrets
 
@@ -67,7 +67,7 @@ if [ "${CDN_ENABLE:-false}" = "true" ]; then
     warn "CDN_ENABLE=true 但 .secrets.env 缺 CF_API_TOKEN。"
     warn "请把 Cloudflare API token（权限 Account>Cloudflare Tunnel:Edit + Zone>DNS:Edit）写入："
     warn "  echo 'CF_API_TOKEN=<your-token>' >> $SECRETS_FILE"
-    warn "否则 lib/cloudflare.sh 无法建隧道，CDN 出口会被跳过。"
+    warn "否则 core/cloudflare.sh 无法建隧道，CDN 出口会被跳过。"
   fi
 fi
 

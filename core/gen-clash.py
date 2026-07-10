@@ -10,10 +10,11 @@ can be revoked without affecting the others. Primary node is VLESS+Reality;
 Hysteria2 and AnyTLS are fallback options for compatible Mihomo clients.
 """
 import pathlib
+import os
 import sys
 
-HERE = pathlib.Path(__file__).resolve().parent
-OUT_DIR = HERE / "clash-configs"
+ROOT = pathlib.Path(os.environ.get("NETWORK_NODE_ROOT", pathlib.Path(__file__).resolve().parent.parent))
+OUT_DIR = ROOT / "clash-configs"
 
 
 def load_kv(path):
@@ -30,8 +31,8 @@ def load_kv(path):
 
 
 env = {}
-env.update(load_kv(HERE / "deploy.conf"))
-env.update(load_kv(HERE / ".secrets.env"))
+env.update(load_kv(ROOT / "deploy.conf"))
+env.update(load_kv(ROOT / ".secrets.env"))
 
 REQUIRED = [
     "STATIC_IP",
@@ -41,7 +42,7 @@ REQUIRED = [
 ]
 missing = [k for k in REQUIRED if not env.get(k)]
 if missing:
-    sys.exit(f"ERROR: 缺少必要变量 {missing}（应由 deploy.sh 自动生成，请检查 .secrets.env）")
+    sys.exit(f"ERROR: 缺少必要变量 {missing}（应由部署入口自动生成，请检查 .secrets.env）")
 
 devices = env.get("DEVICES", "mac iphone ipad laptop spare").split()
 
