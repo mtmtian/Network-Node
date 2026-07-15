@@ -12,6 +12,7 @@ from html import unescape
 import json
 import os
 import re
+import signal
 import subprocess
 import sys
 import time
@@ -91,6 +92,28 @@ PROVIDERS: List[Dict[str, Any]] = [
         "plan_prefixes": ["BudgetKVM"],
         "priority": "value",
         "network": "multi-location budget KVM",
+        "focus": True,
+    },
+    {
+        "id": "novixlink-ntt-isp-vps",
+        "provider": "NovixLink",
+        "region": "Los Angeles, US",
+        "kind": "novixlink_markdown",
+        "url": "https://novixlink.com/store/nttispipvps",
+        "fetch_url": "https://r.jina.ai/http://novixlink.com/store/nttispipvps",
+        "priority": "cn2",
+        "network": "AS9929 / CMIN2 three-network optimized, NTT dual residential ISP",
+        "focus": True,
+    },
+    {
+        "id": "novixlink-gtt-isp-vps",
+        "provider": "NovixLink",
+        "region": "Los Angeles, US",
+        "kind": "novixlink_markdown",
+        "url": "https://novixlink.com/store/us-lacup-isp",
+        "fetch_url": "https://r.jina.ai/http://novixlink.com/store/us-lacup-isp",
+        "priority": "cn2",
+        "network": "AS9929 / CMIN2 three-network optimized, GTT dual residential ISP",
         "focus": True,
     },
     {
@@ -301,6 +324,9 @@ _COUNTED_PLAN = re.compile(
     r"(?P<label>Available|Disponible|可用|Dostupne|Saadaval)",
     re.IGNORECASE,
 )
+_NOVIXLINK_PLAN = re.compile(r"(?m)^###\s+(?P<plan>LAX-[^\n]+)\s*$")
+_NOVIXLINK_CAD_PRICE = re.compile(r"\$\s*(?P<amount>\d+(?:\.\d+)?)\s*CAD\b", re.IGNORECASE)
+_NOVIXLINK_USD_PRICE = re.compile(r"~\s*\$\s*(?P<amount>\d+(?:\.\d+)?)\s*USD\b", re.IGNORECASE)
 
 _TWITTER_POSITIVE = ("coupon", "sale", "discount", "promo", "restock", "in stock", "available", "优惠", "折扣", "优惠码", "补货", "有货", "上架", "开售")
 _TWITTER_NEGATIVE = ("out of stock", "sold out", "unavailable", "无货", "缺货", "断货", "售罄", "抢空")
@@ -597,6 +623,68 @@ def check_counted_html(provider: Dict[str, Any], status_code: int, text: str) ->
     else:
         result["status"] = "unknown"
         result["reason"] = "public page has no matching inventory count"
+    return result
+
+
+def check_novixlink_markdown(provider: Dict[str, Any], status_code: int, text: str) -> Dict[str, Any]:
+    result = _base_result(provider)
+    if status_code in (401, 403, 429):
+        result["status"] = "blocked"
+        result["reason"] = "provider anti-bot or rate-limit response (HTTP %s)" % status_code
+        return result
+    if status_code >= 400:
+        result["status"] = "unreachable"
+        result["reason"] = "HTTP %s" % status_code
+        return result
+
+    plans = []
+    headings = list(_NOVIXLINK_PLAN.finditer(text))
+    for index, heading in enumerate(headings):
+        section_end = headings[index + 1].start() if index + 1 < len(headings) else len(text)
+        section = text[heading.end() : section_end]
+        cad_match = _NOVIXLINK_CAD_PRICE.search(section)
+        if not cad_match:
+            continue
+        usd_match = _NOVIXLINK_USD_PRICE.search(section)
+        cad_amount = float(cad_match.group("amount"))
+        usd_amount = float(usd_match.group("amount")) if usd_match else None
+        monthly_equivalent = usd_amount if usd_amount is not None else cad_amount
+        price = {
+            "amount": cad_amount,
+            "currency": "CAD",
+            "period": "month",
+            "monthly_equivalent": monthly_equivalent,
+            "price_eligible": monthly_equivalent <= 12,
+        }
+        if usd_amount is not None:
+            price["monthly_equivalent_currency"] = "USD"
+        product_match = re.search(r"\]\((https?://[^)]+/store/[^)]+)\)", section)
+        product_url = product_match.group(1) if product_match else None
+        if product_url and product_url.startswith("http://novixlink.com/"):
+            product_url = "https://novixlink.com/" + product_url.split("http://novixlink.com/", 1)[1]
+        sold_out = bool(re.search(r"全部售罄|out of stock|sold out|unavailable", section, re.IGNORECASE))
+        order_signal = bool(re.search(r"立即购买|order now|add to cart", section, re.IGNORECASE))
+        plans.append(
+            {
+                "plan": heading.group("plan").strip(),
+                "price": price,
+                "product_url": product_url,
+                "available": order_signal and not sold_out,
+            }
+        )
+
+    result["plans"] = plans
+    if not plans:
+        result["status"] = "unknown"
+        result["reason"] = "NovixLink page has no matching plan price or order state"
+    elif any(plan["available"] for plan in plans):
+        result["status"] = "available"
+        result["confidence"] = "high"
+        result["reason"] = "official NovixLink page exposes per-plan price and order or sold-out state"
+    else:
+        result["status"] = "out_of_stock"
+        result["confidence"] = "high"
+        result["reason"] = "official NovixLink page marks all parsed plans sold out"
     return result
 
 
@@ -934,6 +1022,43 @@ def _reddit_rss_search(provider: Dict[str, Any], timeout: int) -> List[Dict[str,
     return posts
 
 
+def _terminate_process_group(process: subprocess.Popen) -> None:
+    if os.name == "nt":
+        process.kill()
+        process.wait()
+        return
+
+    try:
+        os.killpg(process.pid, signal.SIGTERM)
+    except ProcessLookupError:
+        return
+    try:
+        process.wait(timeout=2)
+    except subprocess.TimeoutExpired:
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        process.wait()
+
+
+def _run_reddit_opencli(command: List[str], timeout: float, env: Dict[str, str]) -> subprocess.CompletedProcess:
+    process = subprocess.Popen(
+        command,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        env=env,
+        start_new_session=os.name != "nt",
+    )
+    try:
+        stdout, stderr = process.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired as exc:
+        _terminate_process_group(process)
+        raise RuntimeError("Reddit OpenCLI timed out after %.1fs" % timeout) from exc
+    return subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
+
+
 def _reddit_search_posts(provider: Dict[str, Any], timeout: int) -> List[Dict[str, Any]]:
     command = [
         "opencli",
@@ -949,36 +1074,44 @@ def _reddit_search_posts(provider: Dict[str, Any], timeout: int) -> List[Dict[st
         "-f",
         "json",
     ]
+    deadline = time.monotonic() + timeout
     try:
-        completed = subprocess.run(
-            command,
-            text=True,
-            capture_output=True,
-            timeout=timeout,
-            check=False,
-            env=_external_command_env(),
-        )
+        cli_timeout = min(10.0, max(0.1, deadline - time.monotonic()))
+        completed = _run_reddit_opencli(command, cli_timeout, _external_command_env())
     except (OSError, subprocess.TimeoutExpired) as exc:
         raise RuntimeError("Reddit check failed: %s" % exc) from exc
-    failure_reason = ""
-    if completed.returncode != 0:
-        failure_reason = completed.stderr.strip() or "opencli exited with status %s" % completed.returncode
+    except RuntimeError as exc:
+        failure_reason = str(exc)
         posts = None
     else:
-        try:
-            posts = json.loads(completed.stdout)
-            if not isinstance(posts, list):
-                raise ValueError("opencli response is not a post list")
-        except (ValueError, TypeError):
-            failure_reason = "opencli returned an unreadable response"
+        failure_reason = ""
+        if completed.returncode != 0:
+            failure_reason = completed.stderr.strip() or "opencli exited with status %s" % completed.returncode
             posts = None
+        else:
+            try:
+                posts = json.loads(completed.stdout)
+                if not isinstance(posts, list):
+                    raise ValueError("opencli response is not a post list")
+            except (ValueError, TypeError):
+                failure_reason = "opencli returned an unreadable response"
+                posts = None
     if posts is None:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise RuntimeError("%s; public fallbacks skipped because the timeout budget expired" % failure_reason)
         try:
-            posts = _reddit_http_search(provider, timeout)
+            posts = _reddit_http_search(provider, min(5.0, remaining))
         except (OSError, RuntimeError, ValueError, TypeError) as exc:
             json_failure_reason = str(exc)
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise RuntimeError(
+                    "Reddit check failed: %s; public JSON fallback failed: %s; RSS fallback skipped because the timeout budget expired"
+                    % (failure_reason, json_failure_reason)
+                ) from exc
             try:
-                posts = _reddit_rss_search(provider, timeout)
+                posts = _reddit_rss_search(provider, remaining)
             except (OSError, RuntimeError, ValueError, TypeError) as rss_exc:
                 raise RuntimeError(
                     "Reddit check failed: %s; public JSON fallback failed: %s; RSS fallback failed: %s"
@@ -1116,6 +1249,8 @@ def check_provider(provider: Dict[str, Any], timeout: int = 20) -> Dict[str, Any
         result = check_bwh_json(provider, status_code, text)
     elif provider["kind"] == "whmcs_offer_html":
         result = check_whmcs_offer_html(provider, status_code, text)
+    elif provider["kind"] == "novixlink_markdown":
+        result = check_novixlink_markdown(provider, status_code, text)
     else:
         result = check_html(provider, status_code, text)
     result["http_status"] = status_code
@@ -1176,6 +1311,9 @@ def monitorability(cn2_only: bool = False, all_providers: bool = False) -> List[
         elif kind == "whmcs_offer_html":
             level = "stock"
             reason = "official WHMCS offer page exposes per-plan enabled or out-of-stock order state"
+        elif kind == "novixlink_markdown":
+            level = "stock"
+            reason = "official NovixLink page exposes per-plan price and order or sold-out state"
         elif provider.get("stock_signal") == "catalog":
             level = "catalog_only"
             reason = "public catalog is reachable, but checkout inventory is not exposed"

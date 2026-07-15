@@ -1,6 +1,8 @@
 import json
 import io
 import os
+import signal
+import subprocess
 import sys
 import tempfile
 import time
@@ -13,11 +15,14 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
 
+import vps_stock  # noqa: E402
+
 from vps_stock import (  # noqa: E402
     check_bwh_json,
     check_counted_html,
     check_frantech_html,
     check_html,
+    check_novixlink_markdown,
     check_reddit,
     check_twitter_discovery,
     check_twitter,
@@ -105,6 +110,45 @@ class VpsStockParsingTests(unittest.TestCase):
         }
         result = check_counted_html(provider, 403, "Just a moment")
         self.assertEqual(result["status"], "blocked")
+
+    def test_novixlink_markdown_parses_cad_usd_prices_and_sold_out_state(self):
+        provider = {
+            "id": "novixlink-ntt-isp-vps",
+            "provider": "NovixLink",
+            "region": "Los Angeles, US",
+            "priority": "cn2",
+            "network": "AS9929 / CMIN2",
+            "url": "https://novixlink.com/store/nttispipvps",
+        }
+        markdown = """
+### LAX-CUPN Lite 轻量版
+
+ $6.99 CAD
+
+ ~ $4.89 USD
+
+[立即购买](https://novixlink.com/store/nttispipvps/lax-cupn-lite)
+
+全部售罄
+
+### LAX-CUPN Pro 进阶版
+
+ $15.99 CAD
+
+ ~ $11.19 USD
+
+[立即购买](https://novixlink.com/store/nttispipvps/lax-cupn-pro)
+"""
+        result = check_novixlink_markdown(provider, 200, markdown)
+
+        self.assertEqual(result["status"], "available")
+        self.assertEqual(len(result["plans"]), 2)
+        self.assertFalse(result["plans"][0]["available"])
+        self.assertTrue(result["plans"][1]["available"])
+        self.assertEqual(result["plans"][0]["price"]["currency"], "CAD")
+        self.assertEqual(result["plans"][0]["price"]["monthly_equivalent"], 4.89)
+        self.assertTrue(result["plans"][1]["price"]["price_eligible"])
+        self.assertIn("lax-cupn-lite", result["plans"][0]["product_url"])
 
     def test_hostdare_store_counts_cover_the_three_cn2_categories(self):
         provider = {
@@ -215,6 +259,18 @@ class VpsStockParsingTests(unittest.TestCase):
         self.assertEqual(sources["zgovps-hkg-special-52"]["target_price"], 52.0)
         self.assertEqual(sources["zgovps-lax-special-52"]["priority"], "cn2")
 
+    def test_novixlink_sources_are_separate_cn2_stock_sources(self):
+        sources = {item["id"]: item for item in select_providers()}
+        self.assertEqual(
+            sources["novixlink-ntt-isp-vps"]["url"],
+            "https://novixlink.com/store/nttispipvps",
+        )
+        self.assertEqual(
+            sources["novixlink-gtt-isp-vps"]["url"],
+            "https://novixlink.com/store/us-lacup-isp",
+        )
+        self.assertEqual(sources["novixlink-ntt-isp-vps"]["priority"], "cn2")
+
     def test_default_selection_is_the_focus_group(self):
         focused = {item["id"] for item in select_providers()}
         self.assertIn("buyvm-lv", focused)
@@ -270,6 +326,8 @@ class VpsStockParsingTests(unittest.TestCase):
         self.assertEqual(rows["bwh-lax-cn2"]["level"], "stock")
         self.assertEqual(rows["zgovps-lax-special-52"]["level"], "stock")
         self.assertEqual(rows["zgovps-hkg-special-52"]["level"], "stock")
+        self.assertEqual(rows["novixlink-ntt-isp-vps"]["level"], "stock")
+        self.assertEqual(rows["novixlink-gtt-isp-vps"]["level"], "stock")
         self.assertNotIn("dmit-x", rows)
         self.assertNotIn("racknerd-lax", rows)
 
@@ -283,6 +341,8 @@ class VpsStockParsingTests(unittest.TestCase):
                 "hostdare-lax-cn2-amd",
                 "hostdare-lax-cn2-hdd",
                 "bwh-lax-cn2",
+                "novixlink-ntt-isp-vps",
+                "novixlink-gtt-isp-vps",
                 "zgovps-lax-special-52",
                 "dmit-reddit",
                 "vps-discovery-reddit-cn2-vps",
@@ -348,7 +408,7 @@ class VpsStockParsingTests(unittest.TestCase):
         since = command[command.index("--since") + 1]
         self.assertEqual(since, (date.today() - timedelta(days=3)).isoformat())
 
-    @patch("vps_stock.subprocess.run")
+    @patch("vps_stock._run_reddit_opencli")
     def test_reddit_check_reports_recent_restock_lead(self, run):
         run.return_value.returncode = 0
         run.return_value.stderr = ""
@@ -387,7 +447,23 @@ class VpsStockParsingTests(unittest.TestCase):
         self.assertEqual(result["status"], "lead")
         self.assertEqual([post["id"] for post in result["posts"]], ["reddit:abc"])
 
-    @patch("vps_stock.subprocess.run")
+    def test_reddit_opencli_timeout_terminates_process_group(self):
+        runner = getattr(vps_stock, "_run_reddit_opencli", None)
+        self.assertIsNotNone(runner)
+        command = ["opencli", "reddit", "search", "cheap VPS"]
+        process = unittest.mock.MagicMock()
+        process.pid = 12345
+        process.communicate.side_effect = subprocess.TimeoutExpired(command, 10)
+        process.wait.return_value = None
+
+        with patch("vps_stock.subprocess.Popen", return_value=process):
+            with patch("vps_stock.os.killpg") as killpg:
+                with self.assertRaises(RuntimeError):
+                    runner(command, timeout=10, env={})
+
+        killpg.assert_called_once_with(12345, signal.SIGTERM)
+
+    @patch("vps_stock._run_reddit_opencli")
     def test_reddit_cli_env_restores_user_command_paths(self, run):
         run.return_value.returncode = 0
         run.return_value.stderr = ""
@@ -406,13 +482,13 @@ class VpsStockParsingTests(unittest.TestCase):
         with patch.dict(os.environ, {"PATH": "/usr/bin:/bin"}):
             check_reddit(provider)
 
-        command_path = run.call_args.kwargs["env"]["PATH"].split(os.pathsep)
+        command_path = run.call_args.args[2]["PATH"].split(os.pathsep)
         self.assertIn(str(Path.home() / ".npm-global" / "bin"), command_path)
         self.assertIn("/usr/local/bin", command_path)
         self.assertIn("/opt/homebrew/bin", command_path)
         self.assertIn("/usr/bin", command_path)
 
-    @patch("vps_stock.subprocess.run")
+    @patch("vps_stock._run_reddit_opencli")
     def test_reddit_excludes_posts_older_than_three_days(self, run):
         run.return_value.returncode = 0
         run.return_value.stderr = ""
@@ -450,7 +526,7 @@ class VpsStockParsingTests(unittest.TestCase):
         self.assertEqual([post["id"] for post in result["posts"]], ["reddit:recent"])
 
     @patch("vps_stock.fetch")
-    @patch("vps_stock.subprocess.run")
+    @patch("vps_stock._run_reddit_opencli")
     def test_reddit_falls_back_to_public_json_after_opencli_html_error(self, run, fetch):
         run.return_value.returncode = 1
         run.return_value.stderr = "SyntaxError: Unexpected token '<'"
@@ -494,7 +570,7 @@ class VpsStockParsingTests(unittest.TestCase):
         self.assertIn("search.json", fetch.call_args.args[0])
 
     @patch("vps_stock.fetch")
-    @patch("vps_stock.subprocess.run")
+    @patch("vps_stock._run_reddit_opencli")
     def test_reddit_falls_back_to_atom_after_json_is_forbidden(self, run, fetch):
         run.return_value.returncode = 1
         run.return_value.stderr = "Detached while handling command"
