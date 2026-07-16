@@ -12,6 +12,7 @@ from html import unescape
 import json
 import os
 import re
+import signal
 import subprocess
 import sys
 import time
@@ -23,6 +24,7 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
+from xml.etree import ElementTree
 
 
 def _external_command_env() -> Dict[str, str]:
@@ -90,6 +92,54 @@ PROVIDERS: List[Dict[str, Any]] = [
         "plan_prefixes": ["BudgetKVM"],
         "priority": "value",
         "network": "multi-location budget KVM",
+        "focus": True,
+    },
+    {
+        "id": "colocrossing-cloud-vps-1gb",
+        "provider": "ColoCrossing",
+        "region": "Multi-location; prefer Los Angeles if offered",
+        "kind": "colocrossing_markdown",
+        "url": "https://cloud.colocrossing.com/index.php?rp=/store/cloud-virtual-private-servers/1gb-ram",
+        "fetch_url": "https://r.jina.ai/https://cloud.colocrossing.com/index.php?rp=/store/cloud-virtual-private-servers/1gb-ram",
+        "plan_name": "Cloud Virtual Private Servers - 1GB RAM",
+        "target_price": 3.95,
+        "priority": "value",
+        "network": "China optimization unconfirmed; await provider reply before purchase",
+        "focus": True,
+    },
+    {
+        "id": "colocrossing-cloud-vps-2gb",
+        "provider": "ColoCrossing",
+        "region": "Multi-location; prefer Los Angeles if offered",
+        "kind": "colocrossing_markdown",
+        "url": "https://cloud.colocrossing.com/index.php?rp=/store/cloud-virtual-private-servers/2gb-ram",
+        "fetch_url": "https://r.jina.ai/https://cloud.colocrossing.com/index.php?rp=/store/cloud-virtual-private-servers/2gb-ram",
+        "plan_name": "Cloud Virtual Private Servers - 2GB RAM",
+        "target_price": 6.95,
+        "priority": "value",
+        "network": "China optimization unconfirmed; await provider reply before purchase",
+        "focus": True,
+    },
+    {
+        "id": "novixlink-ntt-isp-vps",
+        "provider": "NovixLink",
+        "region": "Los Angeles, US",
+        "kind": "novixlink_markdown",
+        "url": "https://novixlink.com/store/nttispipvps",
+        "fetch_url": "https://r.jina.ai/http://novixlink.com/store/nttispipvps",
+        "priority": "cn2",
+        "network": "AS9929 / CMIN2 three-network optimized, NTT dual residential ISP",
+        "focus": True,
+    },
+    {
+        "id": "novixlink-gtt-isp-vps",
+        "provider": "NovixLink",
+        "region": "Los Angeles, US",
+        "kind": "novixlink_markdown",
+        "url": "https://novixlink.com/store/us-lacup-isp",
+        "fetch_url": "https://r.jina.ai/http://novixlink.com/store/us-lacup-isp",
+        "priority": "cn2",
+        "network": "AS9929 / CMIN2 three-network optimized, GTT dual residential ISP",
         "focus": True,
     },
     {
@@ -168,6 +218,19 @@ PROVIDERS: List[Dict[str, Any]] = [
         "focus": True,
     },
     {
+        "id": "zgovps-lax-optimized-starter-18-quarterly",
+        "provider": "ZgoVPS",
+        "region": "Los Angeles, US",
+        "kind": "whmcs_offer_html",
+        "url": "https://clients.zgovps.com/index.php?/cart/los-angeles-amd-optimised-vps/",
+        "plan_name": "Starter",
+        "target_price": 18.0,
+        "target_period": "quarter",
+        "priority": "cn2",
+        "network": "GIA / 9929 / CMIN2, China Premium Optimised",
+        "focus": True,
+    },
+    {
         "id": "zgovps-hkg-special-52",
         "provider": "ZgoVPS",
         "region": "Hong Kong",
@@ -178,6 +241,19 @@ PROVIDERS: List[Dict[str, Any]] = [
         "target_period": "year",
         "priority": "value",
         "network": "BGP, China Optimised",
+        "focus": True,
+    },
+    {
+        "id": "dedione-lax-cmin2-1c1g10g-annual",
+        "provider": "DediOne",
+        "region": "Los Angeles, US",
+        "kind": "dedione_html",
+        "url": "https://dedione.com/store/los-angeles-kvm-vps-cmin2-cuii",
+        "plan_name": "LAX.VPS.CMIN2.1C1G10G-Annual",
+        "target_price": 29.99,
+        "target_period": "year",
+        "priority": "cn2",
+        "network": "CMIN2 / AS58807 for China Mobile; CUII / AS9929 for China Unicom; no CN2",
         "focus": True,
     },
 ]
@@ -300,6 +376,9 @@ _COUNTED_PLAN = re.compile(
     r"(?P<label>Available|Disponible|可用|Dostupne|Saadaval)",
     re.IGNORECASE,
 )
+_NOVIXLINK_PLAN = re.compile(r"(?m)^###\s+(?P<plan>LAX-[^\n]+)\s*$")
+_NOVIXLINK_CAD_PRICE = re.compile(r"\$\s*(?P<amount>\d+(?:\.\d+)?)\s*CAD\b", re.IGNORECASE)
+_NOVIXLINK_USD_PRICE = re.compile(r"~\s*\$\s*(?P<amount>\d+(?:\.\d+)?)\s*USD\b", re.IGNORECASE)
 
 _TWITTER_POSITIVE = ("coupon", "sale", "discount", "promo", "restock", "in stock", "available", "优惠", "折扣", "优惠码", "补货", "有货", "上架", "开售")
 _TWITTER_NEGATIVE = ("out of stock", "sold out", "unavailable", "无货", "缺货", "断货", "售罄", "抢空")
@@ -599,6 +678,130 @@ def check_counted_html(provider: Dict[str, Any], status_code: int, text: str) ->
     return result
 
 
+def check_novixlink_markdown(provider: Dict[str, Any], status_code: int, text: str) -> Dict[str, Any]:
+    result = _base_result(provider)
+    if status_code in (401, 403, 429):
+        result["status"] = "blocked"
+        result["reason"] = "provider anti-bot or rate-limit response (HTTP %s)" % status_code
+        return result
+    if status_code >= 400:
+        result["status"] = "unreachable"
+        result["reason"] = "HTTP %s" % status_code
+        return result
+
+    plans = []
+    headings = list(_NOVIXLINK_PLAN.finditer(text))
+    for index, heading in enumerate(headings):
+        section_end = headings[index + 1].start() if index + 1 < len(headings) else len(text)
+        section = text[heading.end() : section_end]
+        cad_match = _NOVIXLINK_CAD_PRICE.search(section)
+        if not cad_match:
+            continue
+        usd_match = _NOVIXLINK_USD_PRICE.search(section)
+        cad_amount = float(cad_match.group("amount"))
+        usd_amount = float(usd_match.group("amount")) if usd_match else None
+        monthly_equivalent = usd_amount if usd_amount is not None else cad_amount
+        price = {
+            "amount": cad_amount,
+            "currency": "CAD",
+            "period": "month",
+            "monthly_equivalent": monthly_equivalent,
+            "price_eligible": monthly_equivalent <= 12,
+        }
+        if usd_amount is not None:
+            price["monthly_equivalent_currency"] = "USD"
+        product_match = re.search(r"\]\((https?://[^)]+/store/[^)]+)\)", section)
+        product_url = product_match.group(1) if product_match else None
+        if product_url and product_url.startswith("http://novixlink.com/"):
+            product_url = "https://novixlink.com/" + product_url.split("http://novixlink.com/", 1)[1]
+        sold_out = bool(re.search(r"全部售罄|out of stock|sold out|unavailable", section, re.IGNORECASE))
+        order_signal = bool(re.search(r"立即购买|order now|add to cart", section, re.IGNORECASE))
+        plans.append(
+            {
+                "plan": heading.group("plan").strip(),
+                "price": price,
+                "product_url": product_url,
+                "available": order_signal and not sold_out,
+            }
+        )
+
+    result["plans"] = plans
+    if not plans:
+        result["status"] = "unknown"
+        result["reason"] = "NovixLink page has no matching plan price or order state"
+    elif any(plan["available"] for plan in plans):
+        result["status"] = "available"
+        result["confidence"] = "high"
+        result["reason"] = "official NovixLink page exposes per-plan price and order or sold-out state"
+    else:
+        result["status"] = "out_of_stock"
+        result["confidence"] = "high"
+        result["reason"] = "official NovixLink page marks all parsed plans sold out"
+    return result
+
+
+def check_colocrossing_markdown(provider: Dict[str, Any], status_code: int, text: str) -> Dict[str, Any]:
+    result = _base_result(provider)
+    if status_code in (401, 403, 429):
+        result["status"] = "blocked"
+        result["reason"] = "provider anti-bot or rate-limit response (HTTP %s)" % status_code
+        return result
+    if status_code >= 400:
+        result["status"] = "unreachable"
+        result["reason"] = "HTTP %s" % status_code
+        return result
+
+    plan_name = provider["plan_name"]
+    target_price = float(provider["target_price"])
+    plan_match = plan_name.lower() in text.lower()
+    monthly_prices = []
+    for match in re.finditer(
+        r"(?:Monthly\s+\$\s*(?P<amount>\d+(?:\.\d+)?)\s*USD|"
+        r"\$\s*(?P<amount_after>\d+(?:\.\d+)?)\s*USD\s+Monthly)",
+        text,
+        re.IGNORECASE,
+    ):
+        amount = match.group("amount") or match.group("amount_after")
+        monthly_prices.append(float(amount))
+    price_match = any(amount == target_price for amount in monthly_prices)
+    normalized = re.sub(r"\s+", " ", text).lower()
+    sold_out = bool(re.search(r"out of stock|sold out|unavailable|product not found", normalized))
+    order_signal = bool(re.search(r"\bcontinue\b|add to cart", normalized))
+
+    if plan_match and price_match:
+        result["plans"] = [
+            {
+                "plan": plan_name,
+                "product_url": provider["url"],
+                "price": {
+                    "amount": target_price,
+                    "currency": "USD",
+                    "period": "month",
+                    "monthly_equivalent": target_price,
+                    "price_eligible": target_price <= 12,
+                },
+                "available": order_signal and not sold_out,
+            }
+        ]
+
+    if not result["plans"]:
+        result["status"] = "unknown"
+        result["reason"] = "official ColoCrossing configuration page has no matching plan and monthly price"
+    elif sold_out:
+        result["status"] = "out_of_stock"
+        result["confidence"] = "medium"
+        result["reason"] = "official ColoCrossing configuration page marks the target plan unavailable"
+    elif order_signal:
+        result["status"] = "available"
+        result["confidence"] = "medium"
+        result["reason"] = "official ColoCrossing page exposes the target price and configuration action; inventory and location may still change"
+    else:
+        result["status"] = "catalog_only"
+        result["confidence"] = "low"
+        result["reason"] = "official ColoCrossing page exposes the target plan and price but no configuration action"
+    return result
+
+
 def check_bwh_json(provider: Dict[str, Any], status_code: int, text: str) -> Dict[str, Any]:
     result = _base_result(provider)
     if status_code in (401, 403, 429):
@@ -715,6 +918,69 @@ def check_html(provider: Dict[str, Any], status_code: int, text: str) -> Dict[st
     return result
 
 
+def check_dedione_html(provider: Dict[str, Any], status_code: int, text: str) -> Dict[str, Any]:
+    result = _base_result(provider)
+    if status_code in (401, 403, 429):
+        result["status"] = "blocked"
+        result["reason"] = "provider anti-bot or rate-limit response (HTTP %s)" % status_code
+        return result
+    if status_code >= 400:
+        result["status"] = "unreachable"
+        result["reason"] = "HTTP %s" % status_code
+        return result
+
+    target_name = provider["plan_name"]
+    target_price = float(provider["target_price"])
+    matches = []
+    for section in re.split(r"(?=<div\b[^>]*class=[\"']package[\"'])", text, flags=re.IGNORECASE):
+        name_match = re.search(r"<h3\b[^>]*class=[\"'][^\"']*\bpackage-title\b[^\"']*[\"'][^>]*>(.*?)</h3>", section, re.IGNORECASE | re.DOTALL)
+        if not name_match:
+            continue
+        plan_name = _html_text(name_match.group(1))
+        if plan_name != target_name:
+            continue
+        price_match = re.search(r"<div\b[^>]*class=[\"'][^\"']*\bprice-amount\b[^\"']*[\"'][^>]*>\s*([$€£])\s*(\d+(?:\.\d+)?)\s*([A-Z]{3})?", section, re.IGNORECASE | re.DOTALL)
+        cycle_match = re.search(r"<div\b[^>]*class=[\"'][^\"']*\bprice-cycle\b[^\"']*[\"'][^>]*>\s*(Monthly|Quarterly|Semi-Annually|Annually|Yearly)", section, re.IGNORECASE | re.DOTALL)
+        if not (price_match and cycle_match):
+            continue
+        amount = float(price_match.group(2))
+        period_label = cycle_match.group(1).lower()
+        period = "month" if period_label == "monthly" else "year"
+        if amount != target_price or (provider.get("target_period") and period != provider["target_period"]):
+            continue
+        button_match = re.search(r"<a\b[^>]*class=[\"'][^\"']*\bbtn-order-now\b[^\"']*[\"'][^>]*>(.*?)</a>", section, re.IGNORECASE | re.DOTALL)
+        section_text = _html_text(section).lower()
+        available = bool(button_match) and not bool(re.search(r"out of stock|sold out|unavailable|not available", section_text))
+        monthly_equivalent = amount if period == "month" else round(amount / 12, 2)
+        matches.append(
+            {
+                "plan": plan_name,
+                "price": {
+                    "amount": amount,
+                    "currency": {"$": "USD", "€": "EUR", "£": "GBP"}.get(price_match.group(1), price_match.group(3) or "USD"),
+                    "period": period,
+                    "monthly_equivalent": monthly_equivalent,
+                    "price_eligible": amount <= 80 if period == "year" else monthly_equivalent <= 12,
+                },
+                "available": available,
+            }
+        )
+
+    result["plans"] = matches
+    if not matches:
+        result["status"] = "unknown"
+        result["reason"] = "official DediOne page has no matching product name, price, and billing cycle"
+    elif any(plan["available"] for plan in matches):
+        result["status"] = "available"
+        result["confidence"] = "medium"
+        result["reason"] = "official DediOne product card exposes an order action; checkout inventory may still change"
+    else:
+        result["status"] = "out_of_stock"
+        result["confidence"] = "medium"
+        result["reason"] = "official DediOne product card has no enabled order action"
+    return result
+
+
 def _html_text(value: str) -> str:
     return " ".join(unescape(re.sub(r"<[^>]+>", " ", value)).split())
 
@@ -735,7 +1001,7 @@ def check_whmcs_offer_html(provider: Dict[str, Any], status_code: int, text: str
         name_match = re.search(r"<strong\b[^>]*>(.*?)</strong>", form, re.IGNORECASE | re.DOTALL)
         id_match = re.search(r"<input\b[^>]*name=[\"']id[\"'][^>]*value=[\"'](\d+)[\"']", form, re.IGNORECASE)
         option_match = re.search(
-            r"<option\b[^>]*>\s*([$€£])\s*(\d+(?:\.\d+)?)\s*([A-Z]{3})?\s*(Monthly|Annually|Yearly)\s*</option>",
+            r"<option\b[^>]*>\s*([$€£])\s*(\d+(?:\.\d+)?)\s*([A-Z]{3})?\s*(Monthly|Quarterly|Annually|Yearly)\s*</option>",
             form,
             re.IGNORECASE,
         )
@@ -746,7 +1012,12 @@ def check_whmcs_offer_html(provider: Dict[str, Any], status_code: int, text: str
         plan_name = _html_text(name_match.group(1))
         amount = float(option_match.group(2))
         period_label = option_match.group(4).lower()
-        period = "month" if period_label == "monthly" else "year"
+        period = {
+            "monthly": "month",
+            "quarterly": "quarter",
+            "annually": "year",
+            "yearly": "year",
+        }[period_label]
         if provider.get("plan_name") and plan_name != provider["plan_name"]:
             continue
         if provider.get("target_price") is not None and amount != float(provider["target_price"]):
@@ -758,12 +1029,14 @@ def check_whmcs_offer_html(provider: Dict[str, Any], status_code: int, text: str
         button_text = _html_text(button_match.group(2)).lower()
         available = "disabled" not in button_attrs and "out of stock" not in button_text
         currency = {"$": "USD", "€": "EUR", "£": "GBP"}.get(option_match.group(1), option_match.group(3) or "USD")
+        billing_months = {"month": 1, "quarter": 3, "year": 12}[period]
+        monthly_equivalent = round(amount / billing_months, 2)
         price = {
             "amount": amount,
             "currency": currency,
             "period": period,
-            "monthly_equivalent": round(amount / 12, 2) if period == "year" else amount,
-            "price_eligible": amount <= 80 if period == "year" else amount <= 12,
+            "monthly_equivalent": monthly_equivalent,
+            "price_eligible": amount <= 80 if period == "year" else monthly_equivalent <= 12,
         }
         matches.append(
             {
@@ -777,7 +1050,7 @@ def check_whmcs_offer_html(provider: Dict[str, Any], status_code: int, text: str
     result["plans"] = matches
     if not matches:
         result["status"] = "unknown"
-        result["reason"] = "official WHMCS offer page has no matching plan and annual price"
+        result["reason"] = "official WHMCS offer page has no matching plan and billing price"
     elif any(plan["available"] for plan in matches):
         result["status"] = "available"
         result["confidence"] = "high"
@@ -889,6 +1162,87 @@ def _reddit_http_search(provider: Dict[str, Any], timeout: int) -> List[Dict[str
     return [child.get("data", {}) for child in children if isinstance(child, dict)]
 
 
+def _reddit_rss_search(provider: Dict[str, Any], timeout: int) -> List[Dict[str, Any]]:
+    query = urlencode(
+        {
+            "q": provider["reddit_query"],
+            "sort": "new",
+            "t": "month",
+            "limit": "30",
+        }
+    )
+    status_code, text = fetch("https://www.reddit.com/search.rss?%s" % query, timeout=timeout)
+    if status_code >= 400:
+        raise RuntimeError("HTTP %s" % status_code)
+    try:
+        root = ElementTree.fromstring(text)
+    except ElementTree.ParseError as exc:
+        raise ValueError("Reddit RSS returned invalid XML") from exc
+
+    atom = "{http://www.w3.org/2005/Atom}"
+    posts = []
+    for entry in root.findall("%sentry" % atom):
+        raw_id = entry.findtext("%sid" % atom, default="")
+        if not raw_id.startswith("t3_"):
+            continue
+        updated = entry.findtext("%supdated" % atom, default="")
+        try:
+            created_utc = datetime.fromisoformat(updated.replace("Z", "+00:00")).timestamp()
+        except (TypeError, ValueError):
+            continue
+        link = entry.find("%slink" % atom)
+        author = entry.find("%sauthor" % atom)
+        content = entry.findtext("%scontent" % atom, default="")
+        posts.append(
+            {
+                "id": raw_id[3:],
+                "title": entry.findtext("%stitle" % atom, default=""),
+                "selftext": re.sub(r"<[^>]+>", " ", unescape(content)),
+                "author": author.findtext("%sname" % atom, default="") if author is not None else "",
+                "created_utc": created_utc,
+                "url": link.get("href", "") if link is not None else "",
+            }
+        )
+    return posts
+
+
+def _terminate_process_group(process: subprocess.Popen) -> None:
+    if os.name == "nt":
+        process.kill()
+        process.wait()
+        return
+
+    try:
+        os.killpg(process.pid, signal.SIGTERM)
+    except ProcessLookupError:
+        return
+    try:
+        process.wait(timeout=2)
+    except subprocess.TimeoutExpired:
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        process.wait()
+
+
+def _run_reddit_opencli(command: List[str], timeout: float, env: Dict[str, str]) -> subprocess.CompletedProcess:
+    process = subprocess.Popen(
+        command,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        env=env,
+        start_new_session=os.name != "nt",
+    )
+    try:
+        stdout, stderr = process.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired as exc:
+        _terminate_process_group(process)
+        raise RuntimeError("Reddit OpenCLI timed out after %.1fs" % timeout) from exc
+    return subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
+
+
 def _reddit_search_posts(provider: Dict[str, Any], timeout: int) -> List[Dict[str, Any]]:
     command = [
         "opencli",
@@ -904,34 +1258,49 @@ def _reddit_search_posts(provider: Dict[str, Any], timeout: int) -> List[Dict[st
         "-f",
         "json",
     ]
+    deadline = time.monotonic() + timeout
     try:
-        completed = subprocess.run(
-            command,
-            text=True,
-            capture_output=True,
-            timeout=timeout,
-            check=False,
-            env=_external_command_env(),
-        )
+        cli_timeout = min(10.0, max(0.1, deadline - time.monotonic()))
+        completed = _run_reddit_opencli(command, cli_timeout, _external_command_env())
     except (OSError, subprocess.TimeoutExpired) as exc:
         raise RuntimeError("Reddit check failed: %s" % exc) from exc
-    failure_reason = ""
-    if completed.returncode != 0:
-        failure_reason = completed.stderr.strip() or "opencli exited with status %s" % completed.returncode
+    except RuntimeError as exc:
+        failure_reason = str(exc)
         posts = None
     else:
-        try:
-            posts = json.loads(completed.stdout)
-            if not isinstance(posts, list):
-                raise ValueError("opencli response is not a post list")
-        except (ValueError, TypeError):
-            failure_reason = "opencli returned an unreadable response"
+        failure_reason = ""
+        if completed.returncode != 0:
+            failure_reason = completed.stderr.strip() or "opencli exited with status %s" % completed.returncode
             posts = None
+        else:
+            try:
+                posts = json.loads(completed.stdout)
+                if not isinstance(posts, list):
+                    raise ValueError("opencli response is not a post list")
+            except (ValueError, TypeError):
+                failure_reason = "opencli returned an unreadable response"
+                posts = None
     if posts is None:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise RuntimeError("%s; public fallbacks skipped because the timeout budget expired" % failure_reason)
         try:
-            posts = _reddit_http_search(provider, timeout)
+            posts = _reddit_http_search(provider, min(5.0, remaining))
         except (OSError, RuntimeError, ValueError, TypeError) as exc:
-            raise RuntimeError("Reddit check failed: %s; public JSON fallback failed: %s" % (failure_reason, exc)) from exc
+            json_failure_reason = str(exc)
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise RuntimeError(
+                    "Reddit check failed: %s; public JSON fallback failed: %s; RSS fallback skipped because the timeout budget expired"
+                    % (failure_reason, json_failure_reason)
+                ) from exc
+            try:
+                posts = _reddit_rss_search(provider, remaining)
+            except (OSError, RuntimeError, ValueError, TypeError) as rss_exc:
+                raise RuntimeError(
+                    "Reddit check failed: %s; public JSON fallback failed: %s; RSS fallback failed: %s"
+                    % (failure_reason, json_failure_reason, rss_exc)
+                ) from rss_exc
     return posts
 
 
@@ -1064,6 +1433,12 @@ def check_provider(provider: Dict[str, Any], timeout: int = 20) -> Dict[str, Any
         result = check_bwh_json(provider, status_code, text)
     elif provider["kind"] == "whmcs_offer_html":
         result = check_whmcs_offer_html(provider, status_code, text)
+    elif provider["kind"] == "dedione_html":
+        result = check_dedione_html(provider, status_code, text)
+    elif provider["kind"] == "novixlink_markdown":
+        result = check_novixlink_markdown(provider, status_code, text)
+    elif provider["kind"] == "colocrossing_markdown":
+        result = check_colocrossing_markdown(provider, status_code, text)
     else:
         result = check_html(provider, status_code, text)
     result["http_status"] = status_code
@@ -1124,6 +1499,15 @@ def monitorability(cn2_only: bool = False, all_providers: bool = False) -> List[
         elif kind == "whmcs_offer_html":
             level = "stock"
             reason = "official WHMCS offer page exposes per-plan enabled or out-of-stock order state"
+        elif kind == "novixlink_markdown":
+            level = "stock"
+            reason = "official NovixLink page exposes per-plan price and order or sold-out state"
+        elif kind == "colocrossing_markdown":
+            level = "order_signal"
+            reason = "official configuration page exposes the target monthly price and configure action, but not inventory counts or per-location stock"
+        elif kind == "dedione_html":
+            level = "order_signal"
+            reason = "official DediOne product card exposes the target price and order action, but not a numeric inventory count"
         elif provider.get("stock_signal") == "catalog":
             level = "catalog_only"
             reason = "public catalog is reachable, but checkout inventory is not exposed"

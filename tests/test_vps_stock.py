@@ -1,6 +1,8 @@
 import json
 import io
 import os
+import signal
+import subprocess
 import sys
 import tempfile
 import time
@@ -13,11 +15,16 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
 
+import vps_stock  # noqa: E402
+
 from vps_stock import (  # noqa: E402
     check_bwh_json,
+    check_colocrossing_markdown,
     check_counted_html,
+    check_dedione_html,
     check_frantech_html,
     check_html,
+    check_novixlink_markdown,
     check_reddit,
     check_twitter_discovery,
     check_twitter,
@@ -36,6 +43,55 @@ from vps_stock import (  # noqa: E402
 
 
 class VpsStockParsingTests(unittest.TestCase):
+    def test_colocrossing_config_page_parses_target_monthly_plan(self):
+        provider = {
+            "id": "colocrossing-cloud-vps-1gb",
+            "provider": "ColoCrossing",
+            "region": "Multi-location",
+            "priority": "value",
+            "network": "route optimization unconfirmed",
+            "url": "https://cloud.colocrossing.com/index.php?rp=/store/cloud-virtual-private-servers/1gb-ram",
+            "plan_name": "Cloud Virtual Private Servers - 1GB RAM",
+            "target_price": 3.95,
+        }
+        markdown = """
+# Configure
+## Cloud Virtual Private Servers - 1GB RAM
+## Choose Billing Cycle
+###### Monthly
+$3.95 USD
+Total Due Today
+$3.95 USD
+Continue
+Add to Cart
+"""
+        result = check_colocrossing_markdown(provider, 200, markdown)
+        self.assertEqual(result["status"], "available")
+        self.assertEqual(result["confidence"], "medium")
+        self.assertEqual(result["plans"][0]["price"]["amount"], 3.95)
+        self.assertTrue(result["plans"][0]["price"]["price_eligible"])
+
+    def test_colocrossing_config_page_detects_sold_out_target_plan(self):
+        provider = {
+            "id": "colocrossing-cloud-vps-2gb",
+            "provider": "ColoCrossing",
+            "region": "Multi-location",
+            "priority": "value",
+            "network": "route optimization unconfirmed",
+            "url": "https://cloud.colocrossing.com/index.php?rp=/store/cloud-virtual-private-servers/2gb-ram",
+            "plan_name": "Cloud Virtual Private Servers - 2GB RAM",
+            "target_price": 6.95,
+        }
+        markdown = """
+## Cloud Virtual Private Servers - 2GB RAM
+###### Monthly
+$6.95 USD
+Out of Stock
+"""
+        result = check_colocrossing_markdown(provider, 200, markdown)
+        self.assertEqual(result["status"], "out_of_stock")
+        self.assertFalse(result["plans"][0]["available"])
+
     def test_buyvm_cart_parses_per_plan_available_counts(self):
         provider = {
             "id": "buyvm-lv",
@@ -105,6 +161,45 @@ class VpsStockParsingTests(unittest.TestCase):
         }
         result = check_counted_html(provider, 403, "Just a moment")
         self.assertEqual(result["status"], "blocked")
+
+    def test_novixlink_markdown_parses_cad_usd_prices_and_sold_out_state(self):
+        provider = {
+            "id": "novixlink-ntt-isp-vps",
+            "provider": "NovixLink",
+            "region": "Los Angeles, US",
+            "priority": "cn2",
+            "network": "AS9929 / CMIN2",
+            "url": "https://novixlink.com/store/nttispipvps",
+        }
+        markdown = """
+### LAX-CUPN Lite 轻量版
+
+ $6.99 CAD
+
+ ~ $4.89 USD
+
+[立即购买](https://novixlink.com/store/nttispipvps/lax-cupn-lite)
+
+全部售罄
+
+### LAX-CUPN Pro 进阶版
+
+ $15.99 CAD
+
+ ~ $11.19 USD
+
+[立即购买](https://novixlink.com/store/nttispipvps/lax-cupn-pro)
+"""
+        result = check_novixlink_markdown(provider, 200, markdown)
+
+        self.assertEqual(result["status"], "available")
+        self.assertEqual(len(result["plans"]), 2)
+        self.assertFalse(result["plans"][0]["available"])
+        self.assertTrue(result["plans"][1]["available"])
+        self.assertEqual(result["plans"][0]["price"]["currency"], "CAD")
+        self.assertEqual(result["plans"][0]["price"]["monthly_equivalent"], 4.89)
+        self.assertTrue(result["plans"][1]["price"]["price_eligible"])
+        self.assertIn("lax-cupn-lite", result["plans"][0]["product_url"])
 
     def test_hostdare_store_counts_cover_the_three_cn2_categories(self):
         provider = {
@@ -209,14 +304,119 @@ class VpsStockParsingTests(unittest.TestCase):
         self.assertTrue(result["plans"][0]["price"]["price_eligible"])
         self.assertFalse(result["plans"][0]["available"])
 
+    def test_zgovps_whmcs_offer_parses_target_quarterly_plan_stock(self):
+        provider = {
+            "id": "zgovps-lax-optimized-starter-18-quarterly",
+            "provider": "ZgoVPS",
+            "region": "Los Angeles, US",
+            "priority": "cn2",
+            "network": "GIA / 9929 / CMIN2",
+            "url": "https://clients.zgovps.com/index.php?/cart/los-angeles-amd-optimised-vps/",
+            "plan_name": "Starter",
+            "target_price": 18.0,
+            "target_period": "quarter",
+        }
+        html = """
+        <form method="post">
+          <input name="id" type="hidden" value="142">
+          <strong class="mb-3">Starter</strong>
+          <select name="cycle">
+            <option value="q" selected="selected">$18.00 USD Quarterly</option>
+            <option value="s">$34.00 USD Semi-Annually</option>
+          </select>
+          <button disabled="disabled">Out of stock!</button>
+        </form>
+        """
+        result = check_whmcs_offer_html(provider, 200, html)
+        self.assertEqual(result["status"], "out_of_stock")
+        self.assertEqual(result["plans"][0]["product_id"], 142)
+        self.assertEqual(result["plans"][0]["price"]["period"], "quarter")
+        self.assertEqual(result["plans"][0]["price"]["monthly_equivalent"], 6.0)
+        self.assertTrue(result["plans"][0]["price"]["price_eligible"])
+        self.assertFalse(result["plans"][0]["available"])
+
     def test_zgovps_52_dollar_offers_are_separate_default_sources(self):
         sources = {item["id"]: item for item in select_providers()}
         self.assertEqual(sources["zgovps-lax-special-52"]["target_price"], 52.0)
+        self.assertEqual(sources["zgovps-lax-optimized-starter-18-quarterly"]["target_price"], 18.0)
+        self.assertEqual(sources["zgovps-lax-optimized-starter-18-quarterly"]["target_period"], "quarter")
         self.assertEqual(sources["zgovps-hkg-special-52"]["target_price"], 52.0)
         self.assertEqual(sources["zgovps-lax-special-52"]["priority"], "cn2")
 
+    def test_dedione_html_parses_target_annual_product_card(self):
+        provider = {
+            "id": "dedione-lax-cmin2-1c1g10g-annual",
+            "provider": "DediOne",
+            "region": "Los Angeles, US",
+            "priority": "cn2",
+            "network": "CMIN2 / AS58807; CUII / AS9929; no CN2",
+            "url": "https://dedione.com/store/los-angeles-kvm-vps-cmin2-cuii",
+            "plan_name": "LAX.VPS.CMIN2.1C1G10G-Annual",
+            "target_price": 29.99,
+            "target_period": "year",
+        }
+        html = """
+        <div class="package" id="product243">
+          <h3 class="package-title">LAX.VPS.CMIN2.1C1G10G-Annual</h3>
+          <div class="price-amount">$29.99 USD</div>
+          <div class="price-cycle">Annually</div>
+          <a class="btn btn-primary btn-order-now">Order Now</a>
+        </div>
+        <div class="package" id="product244">
+          <h3 class="package-title">LAX.VPS.CMIN2.2C2G20G-Annual</h3>
+          <div class="price-amount">$59.99 USD</div>
+          <div class="price-cycle">Annually</div>
+          <a class="btn btn-primary btn-order-now">Order Now</a>
+        </div>
+        """
+        result = check_dedione_html(provider, 200, html)
+        self.assertEqual(result["status"], "available")
+        self.assertEqual(len(result["plans"]), 1)
+        self.assertEqual(result["plans"][0]["price"]["amount"], 29.99)
+        self.assertEqual(result["plans"][0]["price"]["monthly_equivalent"], 2.5)
+        self.assertTrue(result["plans"][0]["price"]["price_eligible"])
+        self.assertTrue(result["plans"][0]["available"])
+
+    def test_dedione_html_marks_target_product_without_order_action_sold_out(self):
+        provider = {
+            "id": "dedione-lax-cmin2-1c1g10g-annual",
+            "provider": "DediOne",
+            "region": "Los Angeles, US",
+            "priority": "cn2",
+            "network": "CMIN2 / AS58807; CUII / AS9929; no CN2",
+            "url": "https://dedione.com/store/los-angeles-kvm-vps-cmin2-cuii",
+            "plan_name": "LAX.VPS.CMIN2.1C1G10G-Annual",
+            "target_price": 29.99,
+            "target_period": "year",
+        }
+        html = """
+        <div class="package" id="product243">
+          <h3 class="package-title">LAX.VPS.CMIN2.1C1G10G-Annual</h3>
+          <div class="price-amount">$29.99 USD</div>
+          <div class="price-cycle">Annually</div>
+          <span>Out of stock</span>
+        </div>
+        """
+        result = check_dedione_html(provider, 200, html)
+        self.assertEqual(result["status"], "out_of_stock")
+        self.assertFalse(result["plans"][0]["available"])
+
+    def test_novixlink_sources_are_separate_cn2_stock_sources(self):
+        sources = {item["id"]: item for item in select_providers()}
+        self.assertEqual(
+            sources["novixlink-ntt-isp-vps"]["url"],
+            "https://novixlink.com/store/nttispipvps",
+        )
+        self.assertEqual(
+            sources["novixlink-gtt-isp-vps"]["url"],
+            "https://novixlink.com/store/us-lacup-isp",
+        )
+        self.assertEqual(sources["novixlink-ntt-isp-vps"]["priority"], "cn2")
+
     def test_default_selection_is_the_focus_group(self):
         focused = {item["id"] for item in select_providers()}
+        self.assertIn("colocrossing-cloud-vps-1gb", focused)
+        self.assertIn("colocrossing-cloud-vps-2gb", focused)
         self.assertIn("buyvm-lv", focused)
         self.assertIn("greencloud-store", focused)
         self.assertIn("dmit-x", focused)
@@ -224,6 +424,8 @@ class VpsStockParsingTests(unittest.TestCase):
         self.assertIn("hostdare-lax-cn2-amd", focused)
         self.assertIn("hostdare-lax-cn2-hdd", focused)
         self.assertIn("bwh-lax-cn2", focused)
+        self.assertIn("zgovps-lax-optimized-starter-18-quarterly", focused)
+        self.assertIn("dedione-lax-cmin2-1c1g10g-annual", focused)
         self.assertNotIn("greencloud-x", focused)
         self.assertNotIn("racknerd-lax", focused)
         self.assertNotIn("cloudcone-lax", focused)
@@ -269,7 +471,13 @@ class VpsStockParsingTests(unittest.TestCase):
         self.assertEqual(rows["hostdare-lax-cn2-hdd"]["level"], "stock")
         self.assertEqual(rows["bwh-lax-cn2"]["level"], "stock")
         self.assertEqual(rows["zgovps-lax-special-52"]["level"], "stock")
+        self.assertEqual(rows["zgovps-lax-optimized-starter-18-quarterly"]["level"], "stock")
+        self.assertEqual(rows["dedione-lax-cmin2-1c1g10g-annual"]["level"], "order_signal")
         self.assertEqual(rows["zgovps-hkg-special-52"]["level"], "stock")
+        self.assertEqual(rows["novixlink-ntt-isp-vps"]["level"], "stock")
+        self.assertEqual(rows["novixlink-gtt-isp-vps"]["level"], "stock")
+        self.assertEqual(rows["colocrossing-cloud-vps-1gb"]["level"], "order_signal")
+        self.assertEqual(rows["colocrossing-cloud-vps-2gb"]["level"], "order_signal")
         self.assertNotIn("dmit-x", rows)
         self.assertNotIn("racknerd-lax", rows)
 
@@ -283,7 +491,11 @@ class VpsStockParsingTests(unittest.TestCase):
                 "hostdare-lax-cn2-amd",
                 "hostdare-lax-cn2-hdd",
                 "bwh-lax-cn2",
+                "novixlink-ntt-isp-vps",
+                "novixlink-gtt-isp-vps",
                 "zgovps-lax-special-52",
+                "zgovps-lax-optimized-starter-18-quarterly",
+                "dedione-lax-cmin2-1c1g10g-annual",
                 "dmit-reddit",
                 "vps-discovery-reddit-cn2-vps",
                 "vps-discovery-x-cn2-vps",
@@ -348,10 +560,11 @@ class VpsStockParsingTests(unittest.TestCase):
         since = command[command.index("--since") + 1]
         self.assertEqual(since, (date.today() - timedelta(days=3)).isoformat())
 
-    @patch("vps_stock.subprocess.run")
+    @patch("vps_stock._run_reddit_opencli")
     def test_reddit_check_reports_recent_restock_lead(self, run):
         run.return_value.returncode = 0
         run.return_value.stderr = ""
+        recent_timestamp = time.time() - 3600
         run.return_value.stdout = json.dumps(
             [
                 {
@@ -359,7 +572,7 @@ class VpsStockParsingTests(unittest.TestCase):
                     "title": "RackNerd VPS restock is live",
                     "selftext": "Limited sale inventory is available.",
                     "author": "vps_user",
-                    "created_utc": 1783860000,
+                    "created_utc": recent_timestamp,
                     "url": "https://www.reddit.com/r/example/comments/abc",
                 },
                 {
@@ -367,7 +580,7 @@ class VpsStockParsingTests(unittest.TestCase):
                     "title": "RackNerd stock sold out",
                     "selftext": "",
                     "author": "vps_user",
-                    "created_utc": 1783860000,
+                    "created_utc": recent_timestamp,
                     "url": "https://www.reddit.com/r/example/comments/def",
                 },
             ]
@@ -386,7 +599,23 @@ class VpsStockParsingTests(unittest.TestCase):
         self.assertEqual(result["status"], "lead")
         self.assertEqual([post["id"] for post in result["posts"]], ["reddit:abc"])
 
-    @patch("vps_stock.subprocess.run")
+    def test_reddit_opencli_timeout_terminates_process_group(self):
+        runner = getattr(vps_stock, "_run_reddit_opencli", None)
+        self.assertIsNotNone(runner)
+        command = ["opencli", "reddit", "search", "cheap VPS"]
+        process = unittest.mock.MagicMock()
+        process.pid = 12345
+        process.communicate.side_effect = subprocess.TimeoutExpired(command, 10)
+        process.wait.return_value = None
+
+        with patch("vps_stock.subprocess.Popen", return_value=process):
+            with patch("vps_stock.os.killpg") as killpg:
+                with self.assertRaises(RuntimeError):
+                    runner(command, timeout=10, env={})
+
+        killpg.assert_called_once_with(12345, signal.SIGTERM)
+
+    @patch("vps_stock._run_reddit_opencli")
     def test_reddit_cli_env_restores_user_command_paths(self, run):
         run.return_value.returncode = 0
         run.return_value.stderr = ""
@@ -405,13 +634,13 @@ class VpsStockParsingTests(unittest.TestCase):
         with patch.dict(os.environ, {"PATH": "/usr/bin:/bin"}):
             check_reddit(provider)
 
-        command_path = run.call_args.kwargs["env"]["PATH"].split(os.pathsep)
+        command_path = run.call_args.args[2]["PATH"].split(os.pathsep)
         self.assertIn(str(Path.home() / ".npm-global" / "bin"), command_path)
         self.assertIn("/usr/local/bin", command_path)
         self.assertIn("/opt/homebrew/bin", command_path)
         self.assertIn("/usr/bin", command_path)
 
-    @patch("vps_stock.subprocess.run")
+    @patch("vps_stock._run_reddit_opencli")
     def test_reddit_excludes_posts_older_than_three_days(self, run):
         run.return_value.returncode = 0
         run.return_value.stderr = ""
@@ -449,7 +678,7 @@ class VpsStockParsingTests(unittest.TestCase):
         self.assertEqual([post["id"] for post in result["posts"]], ["reddit:recent"])
 
     @patch("vps_stock.fetch")
-    @patch("vps_stock.subprocess.run")
+    @patch("vps_stock._run_reddit_opencli")
     def test_reddit_falls_back_to_public_json_after_opencli_html_error(self, run, fetch):
         run.return_value.returncode = 1
         run.return_value.stderr = "SyntaxError: Unexpected token '<'"
@@ -491,6 +720,43 @@ class VpsStockParsingTests(unittest.TestCase):
         self.assertEqual(result["status"], "lead")
         self.assertEqual([post["id"] for post in result["posts"]], ["reddit:fallback"])
         self.assertIn("search.json", fetch.call_args.args[0])
+
+    @patch("vps_stock.fetch")
+    @patch("vps_stock._run_reddit_opencli")
+    def test_reddit_falls_back_to_atom_after_json_is_forbidden(self, run, fetch):
+        run.return_value.returncode = 1
+        run.return_value.stderr = "Detached while handling command"
+        run.return_value.stdout = ""
+        updated = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+        atom = """
+        <feed xmlns="http://www.w3.org/2005/Atom">
+          <entry>
+            <author><name>vps_user</name></author>
+            <content type="html">&lt;div&gt;Limited sale inventory is available.&lt;/div&gt;</content>
+            <id>t3_atom-fallback</id>
+            <link href="https://www.reddit.com/r/example/comments/atom-fallback/" />
+            <updated>%s</updated>
+            <title>RackNerd VPS restock is live</title>
+          </entry>
+        </feed>
+        """ % updated
+        fetch.side_effect = [(403, "blocked"), (200, atom)]
+        provider = {
+            "id": "racknerd-reddit",
+            "provider": "RackNerd",
+            "region": "US",
+            "priority": "value",
+            "network": "community Reddit leads",
+            "url": "https://www.reddit.com/search/?q=RackNerd",
+            "reddit_query": "RackNerd",
+            "reddit_keywords": ["racknerd"],
+        }
+
+        result = check_reddit(provider)
+
+        self.assertEqual(result["status"], "lead")
+        self.assertEqual([post["id"] for post in result["posts"]], ["reddit:atom-fallback"])
+        self.assertIn("search.rss", fetch.call_args_list[1].args[0])
 
     @patch("vps_stock._append_memory_line")
     @patch("vps_stock.check_provider")
