@@ -88,7 +88,7 @@ ok "ingress 已设置"
 
 say "[CF 4/5] 配置 DNS：$CDN_HOSTNAME CNAME -> $TUNNEL_ID.cfargotunnel.com (proxied)"
 DNS_JSON="$(cf_api GET "/zones/$ZONE_ID/dns_records?type=CNAME&name=$CDN_HOSTNAME")"
-REC_ID="$(printf '%s' "$DNS_JSON" | jget '["result"][0]["id"]')"
+REC_ID="$(printf '%s' "$DNS_JSON" | jget '["result"][0]["id"]' || true)"
 DNS_BODY="{\"type\":\"CNAME\",\"name\":\"$CDN_HOSTNAME\",\"content\":\"$TUNNEL_ID.cfargotunnel.com\",\"proxied\":true}"
 if [ -z "$REC_ID" ] || [ "$REC_ID" = "None" ]; then
   cf_api POST "/zones/$ZONE_ID/dns_records" "$DNS_BODY" >/dev/null

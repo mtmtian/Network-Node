@@ -66,7 +66,9 @@ run_deploy() {
   load_secrets
 
   if [ "${CDN_ENABLE:-false}" = "true" ]; then
-    bash "$PROJECT_DIR/core/cloudflare.sh"
+    PROFILE_NAME="$PROFILE_NAME" \
+      NETWORK_NODE_STATE_DIR="$STATE_DIR" \
+      bash "$PROJECT_DIR/core/cloudflare.sh"
     load_secrets
   fi
 
