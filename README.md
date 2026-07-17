@@ -69,6 +69,8 @@ clash-configs/                  所有 profile 的客户端 YAML（不提交）
 
 GCP 和 VPS 真正变化的只有服务器生命周期、连接方式与防火墙；协议和客户端规则只维护一份。详细 seam 和 provider interface 见 [架构说明](docs/architecture.md)。
 
+想快速理解整个仓库，先看[仓库总览与维护说明](docs/repository-guide.md)；它把入口、部署链路、profile、直连/CDN 节点和日常操作放在一处。
+
 ## 配置
 
 首次运行会从 `config/deploy.conf.example` 创建当前 profile 的本地状态。GCloud 固定使用
