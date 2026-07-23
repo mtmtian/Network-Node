@@ -22,6 +22,7 @@ from vps_stock import (  # noqa: E402
     check_colocrossing_markdown,
     check_counted_html,
     check_dedione_html,
+    check_exa_discovery,
     check_frantech_html,
     check_html,
     check_manual,
@@ -497,6 +498,111 @@ Out of Stock
         self.assertIn("vps-discovery-reddit-vps-restock", sources)
         self.assertIn("vps-discovery-x-cn2-vps", sources)
 
+    def test_default_sources_put_exa_before_social_discovery(self):
+        source_ids = [item["id"] for item in select_sources()]
+
+        self.assertLess(
+            source_ids.index("vps-discovery-exa-vps"),
+            source_ids.index("dmit-x"),
+        )
+        self.assertLess(
+            source_ids.index("vps-discovery-exa-vps"),
+            source_ids.index("vps-discovery-reddit-vps-restock"),
+        )
+
+    def test_parse_exa_results_normalizes_published_web_results(self):
+        published = "2026-07-23T12:00:00.000Z"
+        stdout = json.dumps(
+            {
+                "content": [
+                    {
+                        "type": "text",
+                        "text": (
+                            "Title: NovaHost VPS restock\n"
+                            "URL: https://novahost.example/vps\n"
+                            "Published: %s\n"
+                            "Author: VPS Watcher\n"
+                            "Highlights:\n"
+                            "NovaHost VPS restock in Los Angeles CN2 GIA $5/mo, "
+                            "2GB RAM, 40GB NVMe, available now."
+                        )
+                        % published,
+                    }
+                ]
+            }
+        )
+
+        posts = vps_stock._parse_exa_results(stdout)
+
+        self.assertEqual(len(posts), 1)
+        self.assertEqual(posts[0]["title"], "NovaHost VPS restock")
+        self.assertEqual(posts[0]["url"], "https://novahost.example/vps")
+        self.assertEqual(posts[0]["createdAtISO"], published)
+
+    @patch("vps_stock._run_exa")
+    def test_exa_discovery_uses_shared_concrete_evidence_filter(self, run):
+        run.return_value.returncode = 0
+        run.return_value.stderr = ""
+        run.return_value.stdout = json.dumps(
+            {
+                "content": [
+                    {
+                        "type": "text",
+                        "text": (
+                            "Title: NovaHost VPS restock\n"
+                            "URL: https://novahost.example/vps\n"
+                            "Published: %s\n"
+                            "Author: VPS Watcher\n"
+                            "Highlights:\n"
+                            "NovaHost VPS restock in Los Angeles CN2 GIA $5/mo, "
+                            "2GB RAM, 40GB NVMe, available now."
+                        )
+                        % datetime.now(timezone.utc).isoformat(),
+                    }
+                ]
+            }
+        )
+        provider = {
+            "id": "vps-discovery-exa-vps",
+            "provider": "VPS discovery",
+            "region": "global",
+            "kind": "exa_discovery",
+            "priority": "value",
+            "network": "web discovery leads",
+            "url": "https://exa.ai/",
+            "exa_query": "recent VPS restock sale",
+        }
+
+        result = check_exa_discovery(provider)
+
+        self.assertEqual(result["status"], "lead")
+        self.assertEqual(result["posts"][0]["provider"], "NovaHost")
+        self.assertTrue(result["posts"][0]["id"].startswith("exa:"))
+        command = run.call_args.args[0]
+        self.assertEqual(command[0:3], ["mcporter", "call", "exa.web_search_exa"])
+        self.assertIn("--output", command)
+
+    @patch("vps_stock._run_exa")
+    def test_exa_discovery_reports_mcporter_failure(self, run):
+        run.return_value.returncode = 1
+        run.return_value.stdout = ""
+        run.return_value.stderr = "Unknown MCP server 'exa'."
+        provider = {
+            "id": "vps-discovery-exa-vps",
+            "provider": "VPS discovery",
+            "region": "global",
+            "kind": "exa_discovery",
+            "priority": "value",
+            "network": "web discovery leads",
+            "url": "https://exa.ai/",
+            "exa_query": "recent VPS restock sale",
+        }
+
+        result = check_exa_discovery(provider)
+
+        self.assertEqual(result["status"], "unreachable")
+        self.assertIn("Unknown MCP server", result["reason"])
+
     def test_non_social_selection_excludes_x_and_reddit_sources(self):
         sources = {item["id"] for item in select_non_social_providers()}
         self.assertIn("buyvm-lv", sources)
@@ -546,6 +652,7 @@ Out of Stock
                 "dmit-reddit",
                 "vps-discovery-reddit-cn2-vps",
                 "vps-discovery-x-cn2-vps",
+                "vps-discovery-exa-cn2-vps",
             },
         )
 

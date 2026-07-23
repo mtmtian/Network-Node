@@ -8,6 +8,7 @@ when a provider's anti-bot page prevents an inventory check.
 from __future__ import annotations
 
 import argparse
+import hashlib
 from html import unescape
 import json
 import os
@@ -372,6 +373,36 @@ for _query_id, _query, _priority in _DISCOVERY_QUERIES:
         )
 
 
+_EXA_DISCOVERY_QUERIES = (
+    (
+        "vps",
+        "recent VPS restocks or sales published in the last three days, with exact price, location, configuration, or availability",
+        "value",
+    ),
+    (
+        "cn2-vps",
+        "recent CN2 CN2 GIA CMIN2 or three-network optimized VPS restocks or sales published in the last three days, with exact price and availability",
+        "cn2",
+    ),
+)
+EXA_DISCOVERY_PROVIDERS: List[Dict[str, Any]] = []
+for _query_id, _query, _priority in _EXA_DISCOVERY_QUERIES:
+    EXA_DISCOVERY_PROVIDERS.append(
+        {
+            "id": "vps-discovery-exa-%s" % _query_id,
+            "provider": "VPS discovery",
+            "region": "global",
+            "kind": "exa_discovery",
+            "url": "https://exa.ai/",
+            "fetch_url": "https://mcp.exa.ai/mcp",
+            "exa_query": _query,
+            "priority": _priority,
+            "network": "web discovery leads; verify before purchase",
+            "focus": True,
+        }
+    )
+
+
 def fetch(url: str, timeout: int = 20) -> Tuple[int, str]:
     request = Request(url, headers={"User-Agent": "network-node-vps-stock/1.0"})
     try:
@@ -532,7 +563,7 @@ class _FrantechPackageParser(HTMLParser):
 def _discovery_post_text(post: Dict[str, Any], source: str) -> str:
     if source == "x":
         return str(post.get("text", ""))
-    return "%s\n%s" % (post.get("title", ""), post.get("selftext", ""))
+    return "%s\n%s" % (post.get("title", ""), post.get("selftext", post.get("text", "")))
 
 
 def _discovery_post_created_at(post: Dict[str, Any], source: str) -> Optional[float]:
@@ -543,6 +574,14 @@ def _discovery_post_created_at(post: Dict[str, Any], source: str) -> Optional[fl
         try:
             return datetime.fromisoformat(str(value).replace("Z", "+00:00")).timestamp()
         except ValueError:
+            return None
+    if source == "exa":
+        value = post.get("createdAtISO", post.get("created_at", ""))
+        if isinstance(value, (int, float)):
+            return float(value)
+        try:
+            return datetime.fromisoformat(str(value).replace("Z", "+00:00")).timestamp()
+        except (TypeError, ValueError):
             return None
     try:
         return float(post.get("created_utc", 0))
@@ -1320,6 +1359,101 @@ def _run_twitter_opencli(command: List[str], timeout: float, env: Dict[str, str]
     return subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
 
 
+def _run_exa(command: List[str], timeout: float, env: Dict[str, str]) -> subprocess.CompletedProcess:
+    process = subprocess.Popen(
+        command,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        env=env,
+        start_new_session=os.name != "nt",
+    )
+    try:
+        stdout, stderr = process.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired as exc:
+        _terminate_process_group(process)
+        raise RuntimeError("Exa mcporter timed out after %.1fs" % timeout) from exc
+    return subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
+
+
+def _parse_exa_results(stdout: str) -> List[Dict[str, Any]]:
+    try:
+        payload = json.loads(stdout)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Exa returned invalid JSON") from exc
+
+    content = payload.get("content", []) if isinstance(payload, dict) else []
+    texts = [
+        item.get("text", "")
+        for item in content
+        if isinstance(item, dict) and item.get("type") == "text" and item.get("text")
+    ]
+    if not texts:
+        raise ValueError("Exa response has no text results")
+
+    posts = []
+    for block in "\n".join(texts).split("\n---\n"):
+        fields: Dict[str, str] = {}
+        highlights: List[str] = []
+        in_highlights = False
+        for line in block.splitlines():
+            if line.startswith("Title:"):
+                fields["title"] = line[len("Title:") :].strip()
+                in_highlights = False
+            elif line.startswith("URL:"):
+                fields["url"] = line[len("URL:") :].strip()
+                in_highlights = False
+            elif line.startswith("Published:"):
+                fields["published"] = line[len("Published:") :].strip()
+                in_highlights = False
+            elif line.startswith("Author:"):
+                fields["author"] = line[len("Author:") :].strip()
+                in_highlights = False
+            elif line.startswith("Highlights:"):
+                in_highlights = True
+            elif in_highlights:
+                highlights.append(line)
+
+        title = fields.get("title", "")
+        url = fields.get("url", "")
+        published = fields.get("published", "")
+        if not title or not url or not published or published == "N/A":
+            continue
+        try:
+            datetime.fromisoformat(published.replace("Z", "+00:00"))
+        except ValueError:
+            continue
+        posts.append(
+            {
+                "id": hashlib.sha1(url.encode("utf-8")).hexdigest()[:16],
+                "title": title,
+                "text": "\n".join(highlights).strip(),
+                "author": fields.get("author", ""),
+                "createdAtISO": published,
+                "url": url,
+            }
+        )
+    return posts
+
+
+def _search_exa(query: str, timeout: int) -> List[Dict[str, Any]]:
+    command = [
+        "mcporter",
+        "call",
+        "exa.web_search_exa",
+        "--args",
+        json.dumps({"query": query, "numResults": 10}, ensure_ascii=False),
+        "--output",
+        "json",
+        "--timeout",
+        str(max(1000, int(timeout * 1000))),
+    ]
+    completed = _run_exa(command, timeout, _external_command_env())
+    if completed.returncode != 0:
+        raise RuntimeError(completed.stderr.strip() or "mcporter exited with status %s" % completed.returncode)
+    return _parse_exa_results(completed.stdout)
+
+
 def _twitter_timestamp_to_iso(value: Any) -> str:
     """OpenCLI reports Twitter's legacy stamp; downstream filters only read ISO."""
     text = str(value or "").strip()
@@ -1520,6 +1654,21 @@ def check_twitter_discovery(provider: Dict[str, Any], timeout: int = 20) -> Dict
     return result
 
 
+def check_exa_discovery(provider: Dict[str, Any], timeout: int = 20) -> Dict[str, Any]:
+    result = _base_result(provider)
+    try:
+        posts = _search_exa(provider["exa_query"], timeout)
+    except (OSError, RuntimeError, ValueError, TypeError) as exc:
+        result["status"] = "unreachable"
+        result["reason"] = "Exa discovery failed: %s" % exc
+        return result
+    result["posts"] = filter_discovery_posts(posts, source="exa")
+    result["status"] = "lead" if result["posts"] else "no_recent_signal"
+    result["confidence"] = "low"
+    result["reason"] = "Exa web results contain concrete recent VPS evidence; verify before purchase" if result["posts"] else "no recent concrete VPS discovery signal from Exa"
+    return result
+
+
 def check_reddit_discovery(provider: Dict[str, Any], timeout: int = 20) -> Dict[str, Any]:
     result = _base_result(provider)
     try:
@@ -1541,6 +1690,7 @@ def check_provider(provider: Dict[str, Any], timeout: int = 20, social_timeout: 
         "reddit_search",
         "twitter_discovery",
         "reddit_discovery",
+        "exa_discovery",
     }:
         timeout = social_timeout
     if provider["kind"] == "twitter_search":
@@ -1549,6 +1699,8 @@ def check_provider(provider: Dict[str, Any], timeout: int = 20, social_timeout: 
         return check_reddit(provider, timeout)
     if provider["kind"] == "twitter_discovery":
         return check_twitter_discovery(provider, timeout)
+    if provider["kind"] == "exa_discovery":
+        return check_exa_discovery(provider, timeout)
     if provider["kind"] == "reddit_discovery":
         return check_reddit_discovery(provider, timeout)
     if provider["kind"] == "manual":
@@ -1606,8 +1758,27 @@ def select_non_social_providers(cn2_only: bool = False, all_providers: bool = Fa
 
 
 def select_sources(cn2_only: bool = False, all_providers: bool = False) -> Iterable[Dict[str, Any]]:
+    social_kinds = {"twitter_search", "reddit_search"}
+    official = (
+        provider
+        for provider in select_providers(cn2_only=cn2_only, all_providers=all_providers)
+        if provider["kind"] not in social_kinds
+    )
+    embedded_social = (
+        provider
+        for provider in select_providers(cn2_only=cn2_only, all_providers=all_providers)
+        if provider["kind"] in social_kinds
+    )
+    exa = (
+        provider
+        for provider in EXA_DISCOVERY_PROVIDERS
+        if (all_providers or provider.get("focus", False))
+        and (not cn2_only or provider["priority"] == "cn2")
+    )
     return chain(
-        select_providers(cn2_only=cn2_only, all_providers=all_providers),
+        official,
+        exa,
+        embedded_social,
         select_social_providers(cn2_only=cn2_only, all_providers=all_providers),
         (
             provider
@@ -1691,12 +1862,16 @@ def _discovery_state_post_is_valid(post: Dict[str, Any], source_id: str, now: fl
     if not source_id.startswith("vps-discovery-"):
         return True
     post_id = str(post.get("id", ""))
-    source = "x" if post_id.startswith("x:") else "reddit"
+    source = "x" if post_id.startswith("x:") else "exa" if post_id.startswith("exa:") else "reddit"
     raw_post = dict(post)
     raw_post["id"] = post_id.split(":", 1)[-1]
     if source == "x":
         raw_post["createdAtISO"] = post.get("created_at", "")
         raw_post["text"] = post.get("text", post.get("title", ""))
+    elif source == "exa":
+        raw_post["createdAtISO"] = post.get("created_at", "")
+        raw_post["title"] = post.get("title", "")
+        raw_post["text"] = post.get("text", "")
     else:
         raw_post["created_utc"] = post.get("created_at", 0)
         raw_post["title"] = post.get("title", "")

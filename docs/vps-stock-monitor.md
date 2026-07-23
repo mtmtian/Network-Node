@@ -15,6 +15,21 @@ only new availability/lead transitions and meaningful source exceptions.
 Social posts and third-party catalog observations remain leads until the
 provider's official page is checked.
 
+The default source order is official provider pages, Exa web discovery, named
+provider X/Reddit leads, and generic X/Reddit discovery. Exa is the preferred
+web-search backend for broad VPS discovery, not an inventory authority: its
+results are kept only when they are within the three-day window and contain
+eligible price plus concrete VPS evidence, then still require official
+verification. Configure it locally with:
+
+```bash
+mcporter config add exa https://mcp.exa.ai/mcp
+```
+
+If Exa is unavailable, the monitor reports the exception and continues with
+the remaining sources. `--no-social` remains an official-source-only check and
+skips Exa and X/Reddit discovery.
+
 The official matrix includes the ZgoVPS Los Angeles AMD Optimised Starter at
 `$18/quarter` (`$6/month` equivalent), tracked separately from the `$52/year`
 special-offer page.
