@@ -27,6 +27,7 @@ from vps_stock import (  # noqa: E402
     check_manual,
     check_novixlink_markdown,
     check_reddit,
+    check_provider,
     check_twitter_discovery,
     check_twitter,
     check_whmcs_offer_html,
@@ -548,7 +549,7 @@ Out of Stock
             },
         )
 
-    @patch("vps_stock.subprocess.run")
+    @patch("vps_stock._run_twitter_opencli")
     def test_twitter_check_reports_community_restock_lead(self, run):
         run.return_value.returncode = 0
         run.return_value.stderr = ""
@@ -559,7 +560,7 @@ Out of Stock
                         "id": "123",
                         "text": "DMIT 洛杉矶补货了，快去看看。",
                         "author": {"screenName": "vps_watcher"},
-                        "createdAtISO": "2026-07-12T00:00:00+00:00",
+                        "created_at": "Sun Jul 12 00:00:00 +0000 2026",
                     },
                     {
                         "id": "456",
@@ -592,7 +593,7 @@ Out of Stock
         self.assertEqual(result["confidence"], "low")
         self.assertEqual([post["id"] for post in result["posts"]], ["x:123"])
 
-    @patch("vps_stock.subprocess.run")
+    @patch("vps_stock._run_twitter_opencli")
     def test_twitter_default_search_window_is_three_days(self, run):
         run.return_value.returncode = 0
         run.return_value.stderr = ""
@@ -609,15 +610,11 @@ Out of Stock
         }
         check_twitter(provider)
         command = run.call_args.args[0]
-        since = command[command.index("--since") + 1]
-        self.assertEqual(since, (date.today() - timedelta(days=3)).isoformat())
+        self.assertIn("since:%s" % (date.today() - timedelta(days=3)).isoformat(), command[3])
+        self.assertEqual(command[command.index("--limit") + 1], "10")
 
     @patch("vps_stock._run_twitter_opencli")
-    @patch("vps_stock.subprocess.run")
-    def test_twitter_check_falls_back_to_opencli_after_twitter_cli_error(self, run, opencli):
-        run.return_value.returncode = 1
-        run.return_value.stderr = "Twitter API error (HTTP 404)"
-        run.return_value.stdout = ""
+    def test_twitter_check_uses_opencli_directly(self, opencli):
         opencli.return_value.returncode = 0
         opencli.return_value.stderr = ""
         opencli.return_value.stdout = json.dumps(
@@ -647,6 +644,26 @@ Out of Stock
         self.assertEqual(result["posts"][0]["id"], "x:789")
         fallback_command = opencli.call_args.args[0]
         self.assertIn("since:2026-07-15", fallback_command[3])
+        self.assertEqual(fallback_command[fallback_command.index("--limit") + 1], "10")
+
+    @patch("vps_stock.check_twitter")
+    def test_social_provider_uses_social_timeout(self, check):
+        provider = {
+            "id": "dmit-x",
+            "provider": "DMIT",
+            "kind": "twitter_search",
+            "region": "US",
+            "priority": "cn2",
+            "network": "community X leads",
+            "url": "https://x.com/search?q=DMIT",
+            "twitter_query": "DMIT",
+        }
+        check.return_value = {"id": "dmit-x"}
+
+        result = check_provider(provider, timeout=15, social_timeout=30)
+
+        self.assertEqual(result["id"], "dmit-x")
+        check.assert_called_once_with(provider, 30)
 
     def test_opencli_legacy_timestamp_is_normalized_to_iso(self):
         posts = _parse_twitter_posts(
@@ -722,6 +739,22 @@ Out of Stock
                     runner(command, timeout=10, env={})
 
         killpg.assert_called_once_with(12345, signal.SIGTERM)
+
+    def test_twitter_opencli_timeout_terminates_process_group(self):
+        runner = getattr(vps_stock, "_run_twitter_opencli", None)
+        self.assertIsNotNone(runner)
+        command = ["opencli", "twitter", "search", "DMIT"]
+        process = unittest.mock.MagicMock()
+        process.pid = 23456
+        process.communicate.side_effect = subprocess.TimeoutExpired(command, 10)
+        process.wait.return_value = None
+
+        with patch("vps_stock.subprocess.Popen", return_value=process):
+            with patch("vps_stock.os.killpg") as killpg:
+                with self.assertRaises(RuntimeError):
+                    runner(command, timeout=10, env={})
+
+        killpg.assert_called_once_with(23456, signal.SIGTERM)
 
     @patch("vps_stock._run_reddit_opencli")
     def test_reddit_cli_env_restores_user_command_paths(self, run):
@@ -976,7 +1009,7 @@ Out of Stock
 
         self.assertEqual(filter_discovery_posts(posts, now=now), [])
 
-    @patch("vps_stock.subprocess.run")
+    @patch("vps_stock._run_twitter_opencli")
     def test_twitter_discovery_uses_the_shared_concrete_evidence_filter(self, run):
         run.return_value.returncode = 0
         run.return_value.stderr = ""
@@ -987,7 +1020,7 @@ Out of Stock
                         "id": "x-new-provider",
                         "text": "NovaHost VPS restock in Los Angeles CN2 GIA $5/mo, 2GB RAM, available now",
                         "author": {"screenName": "vps_watcher"},
-                        "createdAtISO": (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat(),
+                        "created_at": datetime.now(timezone.utc).strftime("%a %b %d %H:%M:%S +0000 %Y"),
                     }
                 ]
             }

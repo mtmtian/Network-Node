@@ -1374,40 +1374,8 @@ def _parse_twitter_posts(stdout: str, source: str) -> List[Dict[str, Any]]:
 
 
 def _search_twitter(query: str, since: str, timeout: int) -> List[Dict[str, Any]]:
-    twitter_command = [
-        "twitter",
-        "search",
-        "--type",
-        "latest",
-        "--since",
-        since,
-        "--max",
-        "30",
-        "--json",
-    ]
-    if query:
-        twitter_command.append(query)
-
-    twitter_failure = ""
-    try:
-        completed = subprocess.run(
-            twitter_command,
-            text=True,
-            capture_output=True,
-            timeout=timeout,
-            check=False,
-            env=_external_command_env(),
-        )
-        if completed.returncode == 0:
-            try:
-                return _parse_twitter_posts(completed.stdout, source="twitter")
-            except (ValueError, TypeError) as exc:
-                twitter_failure = str(exc)
-        else:
-            twitter_failure = completed.stderr.strip() or "exited with status %s" % completed.returncode
-    except (OSError, subprocess.TimeoutExpired) as exc:
-        twitter_failure = str(exc)
-
+    # twitter-cli search is currently broken upstream (issue #69); use the
+    # browser-backed OpenCLI path directly until that issue is resolved.
     opencli_query = "%s since:%s" % (query, since) if query else "since:%s" % since
     opencli_command = [
         "opencli",
@@ -1417,7 +1385,7 @@ def _search_twitter(query: str, since: str, timeout: int) -> List[Dict[str, Any]
         "--product",
         "live",
         "--limit",
-        "30",
+        "10",
         "-f",
         "json",
     ]
@@ -1428,7 +1396,7 @@ def _search_twitter(query: str, since: str, timeout: int) -> List[Dict[str, Any]
         opencli_failure = fallback.stderr.strip() or "exited with status %s" % fallback.returncode
     except (OSError, RuntimeError, ValueError, TypeError) as exc:
         opencli_failure = str(exc)
-    raise RuntimeError("twitter-cli: %s; OpenCLI: %s" % (twitter_failure, opencli_failure))
+    raise RuntimeError("Twitter OpenCLI: %s" % opencli_failure)
 
 
 def _reddit_search_posts(provider: Dict[str, Any], timeout: int) -> List[Dict[str, Any]]:
@@ -1567,7 +1535,14 @@ def check_reddit_discovery(provider: Dict[str, Any], timeout: int = 20) -> Dict[
     return result
 
 
-def check_provider(provider: Dict[str, Any], timeout: int = 20) -> Dict[str, Any]:
+def check_provider(provider: Dict[str, Any], timeout: int = 20, social_timeout: Optional[int] = None) -> Dict[str, Any]:
+    if social_timeout is not None and provider["kind"] in {
+        "twitter_search",
+        "reddit_search",
+        "twitter_discovery",
+        "reddit_discovery",
+    }:
+        timeout = social_timeout
     if provider["kind"] == "twitter_search":
         return check_twitter(provider, timeout)
     if provider["kind"] == "reddit_search":
@@ -1829,6 +1804,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument("--notify-url", help="optional webhook URL; sent only on availability transitions")
     parser.add_argument("--full", action="store_true", help="include all checked items in stdout")
     parser.add_argument("--timeout", type=int, default=20)
+    parser.add_argument("--social-timeout", type=int, default=30)
     args = parser.parse_args(argv)
 
     if args.monitorability:
@@ -1836,7 +1812,9 @@ def main(argv: Optional[List[str]] = None) -> int:
         return 0
 
     source_iter = select_non_social_providers(args.cn2_only, args.all) if args.no_social else select_sources(args.cn2_only, args.all)
-    results = dedupe_discovery_results(check_provider(provider, args.timeout) for provider in source_iter)
+    results = dedupe_discovery_results(
+        check_provider(provider, args.timeout, args.social_timeout) for provider in source_iter
+    )
     state_file = _state_path(args.state_file)
     old: Dict[str, Any] = {}
     if state_file.exists():
