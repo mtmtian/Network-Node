@@ -82,6 +82,8 @@ class GenerateClashConfigTest(unittest.TestCase):
             self.assertIn("  follow-rule: true", mac)
             self.assertIn("  proxy-server-nameserver:", mac)
             self.assertIn("https://1.1.1.1/dns-query", mac)
+            self.assertIn("  nameserver-policy:", mac)
+            self.assertIn("    'geosite:cn':", mac)
             self.assertNotIn('    - "stun.*"', mac)
             self.assertIn('name: "🤖 AI 隐私出口"', mac)
             ai_group = mac.split('name: "🤖 AI 隐私出口"', 1)[1].split(

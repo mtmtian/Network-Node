@@ -96,7 +96,7 @@ US-CDN      → cdn.example.com → Cloudflare → Tunnel → VPS localhost:8080
 - `CDN_ONLY=true` 时，服务端关闭 Reality/Hysteria2/AnyTLS 直连入口，只保留 Cloudflare WS；切换前必须重新生成并导入 YAML。
 - `WARP_ENABLE=true` 与 `CDN_ONLY=true` 互斥。
 - `🛟 自动故障切换`、`⚡ 自动测速` 只是客户端策略组，不是额外的服务器节点。
-- `PRIVACY_MODE=true`（默认）让 `🇨🇳 国内流量` 首次默认走代理；客户端可手动切到 `DIRECT`，`false` 则让该组首次默认直连。局域网与原有 Apple/Spotify 规则不受影响。
+- `PRIVACY_MODE=true`（默认）让 `🇨🇳 国内流量` 首次默认走代理；客户端可手动切到 `DIRECT`，`false` 则让该组首次默认直连。局域网与原有 Apple/Spotify 规则不受影响。DNS 对 `geosite:cn` 使用国内解析，海外域名仍按代理规则使用 DoH。
 - CN 判定依次使用 MetaCubeX `cn` 域名集、`cn-ip` 地址集和 Mihomo `GEOIP,CN` 兜底；AI、Google、Apple、Telegram、广告等更高优先级规则先匹配，`private`/LAN 则始终固定直连。
 - `🤖 AI 隐私出口` 只使用共享 Xray IPv4 出口，按 Reality → CDN（启用时）故障切换；STUN 同组，避免 AI HTTP 与 WebRTC UDP 因双栈或 WARP 显示不同地址。
 - AI 域名使用 MetaCubeX `category-ai-!cn`；常见国际 AI 主域和多数专属子域已覆盖，但共享登录/CDN、直连 IP 和中国 AI 域名不在其完整保证范围内。
