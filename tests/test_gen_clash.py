@@ -102,6 +102,23 @@ class GenerateClashConfigTest(unittest.TestCase):
             ai_group = mac.split('name: "🤖 AI 隐私出口"', 1)[1].split(
                 'name: "🛟 自动故障切换"', 1
             )[0]
+            rules = mac.split("rules:\n", 1)[1]
+            ai_rule = rules.index("  - RULE-SET,ai,🤖 AI 隐私出口")
+            for domain in (
+                "anthropic.com",
+                "claude.ai",
+                "claude.com",
+                "claudemcpclient.com",
+                "claudemcpcontent.com",
+                "claudeusercontent.com",
+            ):
+                self.assertIn(
+                    f"  - DOMAIN-SUFFIX,{domain},🤖 AI 隐私出口", rules
+                )
+                self.assertLess(
+                    rules.index(f"  - DOMAIN-SUFFIX,{domain},🤖 AI 隐私出口"),
+                    ai_rule,
+                )
             self.assertIn("    type: fallback", ai_group)
             self.assertIn('      - "US-Reality"', ai_group)
             self.assertNotIn('      - "US-HY2"', ai_group)

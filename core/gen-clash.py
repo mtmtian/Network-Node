@@ -499,6 +499,13 @@ rules:
 
   # --- [P1] STUN 与 AI 固定到同一个 IPv4 Xray 出口，避免 Web/UDP 出口漂移 ---
   - DOMAIN-KEYWORD,stun,🤖 AI 隐私出口
+  # Claude 静态锚点放在动态 AI 规则集前，避免规则集刷新失败时漏分流。
+  - DOMAIN-SUFFIX,anthropic.com,🤖 AI 隐私出口
+  - DOMAIN-SUFFIX,claude.ai,🤖 AI 隐私出口
+  - DOMAIN-SUFFIX,claude.com,🤖 AI 隐私出口
+  - DOMAIN-SUFFIX,claudemcpclient.com,🤖 AI 隐私出口
+  - DOMAIN-SUFFIX,claudemcpcontent.com,🤖 AI 隐私出口
+  - DOMAIN-SUFFIX,claudeusercontent.com,🤖 AI 隐私出口
   - RULE-SET,ai,🤖 AI 隐私出口
   - RULE-SET,google,🌐 代理流量
 
