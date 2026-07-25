@@ -81,10 +81,21 @@ class GenerateClashConfigTest(unittest.TestCase):
             self.assertIn("  respect-rules: true", mac)
             self.assertIn("  follow-rule: true", mac)
             self.assertIn("  proxy-server-nameserver:", mac)
-            self.assertIn("https://1.1.1.1/dns-query", mac)
+            overseas_dns = mac.split("  nameserver:\n", 1)[1].split(
+                "  nameserver-policy:", 1
+            )[0]
+            self.assertIn("https://1.1.1.1/dns-query", overseas_dns)
+            self.assertIn("https://8.8.8.8/dns-query", overseas_dns)
             self.assertIn("  nameserver-policy:", mac)
             self.assertIn("    '+.cn':", mac)
             self.assertIn("    'geosite:cn':", mac)
+            cn_dns_policy = mac.split("  nameserver-policy:", 1)[1].split(
+                "\n\nproxies:", 1
+            )[0]
+            self.assertIn("https://223.5.5.5/dns-query", cn_dns_policy)
+            self.assertIn("https://120.53.53.53/dns-query", cn_dns_policy)
+            self.assertNotIn("\n      - 223.5.5.5", cn_dns_policy)
+            self.assertNotIn("\n      - 119.29.29.29", cn_dns_policy)
             self.assertIn("DOMAIN-SUFFIX,cn,🇨🇳 国内流量", mac)
             self.assertNotIn('    - "stun.*"', mac)
             self.assertIn('name: "🤖 AI 隐私出口"', mac)
@@ -125,6 +136,8 @@ class GenerateClashConfigTest(unittest.TestCase):
             )
             self.assertIn("  - RULE-SET,cn,🇨🇳 国内流量", split_config)
             self.assertIn("  - GEOIP,CN,🇨🇳 国内流量,no-resolve", split_config)
+            self.assertIn("https://223.5.5.5/dns-query", split_config)
+            self.assertIn("https://120.53.53.53/dns-query", split_config)
 
     def test_cdn_only_config_omits_direct_ip_nodes(self):
         with tempfile.TemporaryDirectory() as tmp:

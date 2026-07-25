@@ -285,14 +285,14 @@ dns:
   nameserver:
     - https://1.1.1.1/dns-query
     - https://8.8.8.8/dns-query
-  # 国内直连流量使用国内 DNS，避免 DIRECT 连接仍拿海外 DoH 的解析结果。
+  # 国内流量使用国内加密 DNS，避免 DIRECT 连接仍拿海外 DoH 的解析结果或明文泄漏。
   nameserver-policy:
     '+.cn':
-      - 223.5.5.5
-      - 119.29.29.29
+      - https://223.5.5.5/dns-query
+      - https://120.53.53.53/dns-query
     'geosite:cn':
-      - 223.5.5.5
-      - 119.29.29.29
+      - https://223.5.5.5/dns-query
+      - https://120.53.53.53/dns-query
 
 proxies:
 {REALITY_PROXY}{HY2_PROXY}{ANYTLS_PROXY}
