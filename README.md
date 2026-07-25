@@ -87,7 +87,7 @@ GCP 和 VPS 真正变化的只有服务器生命周期、连接方式与防火�
 | `HY2_ACME_ENABLE` | `false` | 可选 Cloudflare DNS-01 真实证书 |
 | `ANYTLS_PORT` | 随机 | AnyTLS TCP 端口 |
 | `DEVICES` | `mac iphone` | 每个设备生成独立凭据和 YAML |
-| `PRIVACY_MODE` | `true` | 公开 CN 流量与 STUN 走代理；关闭后恢复国内直连分流 |
+| `PRIVACY_MODE` | `true` | CN 流量首次默认走代理；设为 `false` 后首次默认直连并使用国内加密 DoH，STUN 始终走代理 |
 | `CDN_ENABLE` | `false` | 可选 Cloudflare Tunnel 出口 |
 | `CDN_ONLY` | `false` | 仅使用 Cloudflare WS，并关闭直连代理端口 |
 | `WARP_ENABLE` | `false` | 可选 Reality-WARP 节点；仅该节点的 Xray 出站经过 WARP |
@@ -119,7 +119,9 @@ GCP 和 VPS 真正变化的只有服务器生命周期、连接方式与防火�
 - Clash Verge：Settings → Profiles → Import
 - 手机：使用支持 Reality、Hysteria2 和 AnyTLS 的 Mihomo/Clash.Meta 兼容客户端
 
-新生成的配置默认启用 `PRIVACY_MODE=true`，`🇨🇳 国内流量` 默认选择代理，避免检测页面同时观察到国内直连与代理出口；遇到无法使用的 CN 服务时，可在 Stash/Mihomo 里把该组手动切到 `DIRECT`，无需修改 YAML。设置 `PRIVACY_MODE=false` 会让该组首次默认直连，但仍可手动切回代理。局域网地址始终直连，原有 Apple/Spotify 规则保持不变。DNS 在 Stash 使用 `follow-rule`、在 Mihomo 使用 `respect-rules`，国内域名额外使用国内 DNS，海外域名仍保留代理 DoH，并保留独立 bootstrap 解析器防止递归依赖。
+新生成的配置默认启用 `PRIVACY_MODE=true`，`🇨🇳 国内流量` 默认选择代理，避免检测页面同时观察到国内直连与代理出口；遇到无法使用的 CN 服务时，可在 Stash/Mihomo 里把该组手动切到 `DIRECT`，无需修改 YAML。设置 `PRIVACY_MODE=false` 会让该组首次默认直连，但仍可手动切回代理。局域网地址始终直连，原有 Apple/Spotify 规则保持不变。
+
+当 `PRIVACY_MODE=false`，或手动把 `🇨🇳 国内流量` 切到 `DIRECT` 时，`geosite:cn` 域名通过阿里云 / 腾讯云的加密 DoH 解析，解析结果与国内直连出口保持同区，避免海外 DNS 导致 CDN 绕路；这不会产生明文 DNS 请求，但国内 DoH 服务商仍能看到查询出口 IP。其他域名继续使用经代理路由的 Cloudflare / Google DoH，STUN 仍固定走 `🤖 AI 隐私出口`，不受 `PRIVACY_MODE` 影响。DNS 在 Stash 使用 `follow-rule`、在 Mihomo 使用 `respect-rules`，并保留独立 bootstrap 解析器防止递归依赖。
 
 普通流量默认使用 `🛟 自动故障切换`：Reality 正常时行为不变，连接失败时按 Reality → CDN → Hysteria2 → AnyTLS 顺序切换。AI 域名和 STUN 使用单独的 `🤖 AI 隐私出口`，按 Reality → CDN（启用时）切换；两条入口共用服务端 Xray IPv4 出口，不加入 HY2、AnyTLS 或 WARP。CDN-only 时该组只使用 CDN。
 
