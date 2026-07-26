@@ -94,6 +94,7 @@ class GenerateClashConfigTest(unittest.TestCase):
             )[0]
             self.assertIn("https://223.5.5.5/dns-query", cn_dns_policy)
             self.assertIn("https://120.53.53.53/dns-query", cn_dns_policy)
+            self.assertNotIn("https://1.12.12.12/dns-query", cn_dns_policy)
             self.assertNotIn("\n      - 223.5.5.5", cn_dns_policy)
             self.assertNotIn("\n      - 119.29.29.29", cn_dns_policy)
             self.assertIn("DOMAIN-SUFFIX,cn,🇨🇳 国内流量", mac)
@@ -165,6 +166,15 @@ class GenerateClashConfigTest(unittest.TestCase):
             self.assertIn("  - GEOIP,CN,🇨🇳 国内流量,no-resolve", split_config)
             self.assertIn("https://223.5.5.5/dns-query", split_config)
             self.assertIn("https://120.53.53.53/dns-query", split_config)
+            self.assertIn("  - DOMAIN-KEYWORD,stun,🤖 AI 隐私出口", split_config)
+            self.assertIn("  - MATCH,🎯 兜底策略", split_config)
+            split_fallback = split_config.split('name: "🎯 兜底策略"', 1)[1].split(
+                "\n\nrule-providers:", 1
+            )[0]
+            self.assertLess(
+                split_fallback.index('      - "🚀 代理策略"'),
+                split_fallback.index("      - DIRECT"),
+            )
 
     def test_cdn_only_config_omits_direct_ip_nodes(self):
         with tempfile.TemporaryDirectory() as tmp:
