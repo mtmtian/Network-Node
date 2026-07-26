@@ -99,7 +99,7 @@ US-CDN      → cdn.example.com → Cloudflare → Tunnel → VPS localhost:8080
 - `PRIVACY_MODE=true`（默认）让 `🇨🇳 国内流量` 首次默认走代理；客户端可手动切到 `DIRECT`，`false` 则让该组首次默认直连。局域网与原有 Apple/Spotify 规则不受影响。DNS 对 `geosite:cn` 使用国内解析，海外域名仍按代理规则使用 DoH。
 - CN 判定依次使用 MetaCubeX `cn` 域名集、`cn-ip` 地址集和 Mihomo `GEOIP,CN` 兜底；AI、Google、Apple、Telegram、广告等更高优先级规则先匹配，`private`/LAN 则始终固定直连。
 - `🤖 AI 隐私出口` 只使用共享 Xray IPv4 出口，按 Reality → CDN（启用时）故障切换；STUN 同组，避免 AI HTTP 与 WebRTC UDP 因双栈或 WARP 显示不同地址。
-- AI 域名使用 MetaCubeX `category-ai-!cn`，并为 Anthropic/Claude 保留静态域名锚点；常见国际 AI 主域和多数专属子域已覆盖，但共享登录/CDN、直连 IP 和中国 AI 域名不在其完整保证范围内。
+- AI 域名使用 MetaCubeX `category-ai-!cn`，并为 Anthropic/Claude、OpenAI/ChatGPT、Gemini/AI Studio、NotebookLM、Perplexity 和 Cursor 的核心专属域名保留静态锚点；共享登录/CDN、直连 IP 和中国 AI 域名不在其完整保证范围内。
 
 ## Profile 和文件安全边界
 
@@ -116,7 +116,7 @@ profiles/<profile>/
 
 公共代码只应依赖环境变量和 profile 状态，不要把某台服务器的 IP、域名、Token 或 SSH 文件写进 `core/`、`providers/`、`README.md` 或测试样例。
 
-客户端文件默认使用 `<profile>-<device>.yaml` 命名。如果某台服务器需要更短的设备文件名，可在该 profile 的 `deploy.conf` 设置 `CLIENT_FILE_PREFIX`；这只改变 `clash-configs/` 下的文件前缀和旧文件清理范围，不改变 profile 状态目录，也不会让不同服务器共用凭据。
+客户端文件默认使用 `<profile>-<device>.yaml` 命名。如果某台服务器需要更短的设备文件名，可在该 profile 的 `deploy.conf` 设置 `CLIENT_FILE_PREFIX`；前缀和设备名只允许字母、数字、点、下划线和连字符。生成器先验证全部设备凭据并原子替换每份 YAML，全部新文件就绪后才清理当前前缀的旧文件；这只改变 `clash-configs/` 下的文件前缀和清理范围，不改变 profile 状态目录，也不会让不同服务器共用凭据。
 
 ### 交接时的文件边界
 

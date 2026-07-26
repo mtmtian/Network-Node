@@ -82,6 +82,22 @@ class VpsStockParsingTests(unittest.TestCase):
         self.assertEqual(available["status"], "available")
         self.assertTrue(available["plans"][0]["available"])
 
+        order_only_html = html.replace(
+            '<a class="btn disabled">立即购买</a>\n          <div class="package-qty">0 可用</div>',
+            '<a class="btn">立即购买</a>',
+        )
+        order_only = check_zorocloud_html(provider, 200, order_only_html)
+        self.assertEqual(order_only["status"], "available")
+        self.assertEqual(order_only["confidence"], "medium")
+        self.assertIsNone(order_only["plans"][0]["count"])
+
+        missing_price = check_zorocloud_html(
+            provider,
+            200,
+            html.replace('<div class="price-amount">¥138.00 CNY</div>', ""),
+        )
+        self.assertEqual(missing_price["status"], "unknown")
+
     def test_yt_net_markdown_tracks_each_lax_plan_independently(self):
         markdown = """
 ### US.LAX.A
@@ -123,6 +139,21 @@ CPU 2 vCPU
         self.assertEqual(result_b["plans"][0]["plan"], "US.LAX.B")
         self.assertEqual(result_b["plans"][0]["price"]["amount"], 35.0)
         self.assertTrue(result_b["plans"][0]["available"])
+
+        changed = check_yt_net_markdown(
+            plan_a,
+            200,
+            "### US.LAX.A\n¥28/月\n\n### US.LAX.B\n¥48/月\n",
+        )
+        self.assertEqual(changed["status"], "offer_changed")
+        self.assertEqual(changed["observed_prices"], [28.0])
+
+        missing_price = check_yt_net_markdown(
+            plan_a,
+            200,
+            "### US.LAX.A\nIP IPv4\nCPU 1 vCPU\n",
+        )
+        self.assertEqual(missing_price["status"], "unknown")
 
     def test_colocrossing_config_page_parses_target_monthly_plan(self):
         provider = {
@@ -861,6 +892,62 @@ Out of Stock
         self.assertEqual(result["id"], "dmit-x")
         check.assert_called_once_with(provider, 30)
 
+    @patch("vps_stock.fetch")
+    def test_run_checks_fetches_a_shared_official_url_once(self, fetch):
+        fetch.return_value = (200, "<html><body>Order Now</body></html>")
+        base = {
+            "provider": "Official",
+            "region": "US",
+            "priority": "value",
+            "network": "web",
+            "url": "https://example.com/store",
+            "kind": "html",
+        }
+        providers = [
+            {**base, "id": "official-plan-a"},
+            {**base, "id": "official-plan-b"},
+        ]
+
+        results = vps_stock.run_checks(providers, timeout=5, social_timeout=5)
+
+        self.assertEqual([result["status"] for result in results], ["available", "available"])
+        fetch.assert_called_once_with("https://example.com/store", timeout=5)
+
+    @patch("vps_stock.time.sleep")
+    @patch("vps_stock.fetch")
+    def test_official_fetch_retries_one_transient_network_failure(self, fetch, sleep):
+        fetch.side_effect = [
+            RuntimeError("temporary reset"),
+            (200, "<html><body>Order Now</body></html>"),
+        ]
+        provider = {
+            "id": "official",
+            "provider": "Official",
+            "region": "US",
+            "priority": "value",
+            "network": "web",
+            "url": "https://example.com/store",
+            "kind": "html",
+        }
+
+        result = check_provider(provider, timeout=5)
+
+        self.assertEqual(result["status"], "available")
+        self.assertEqual(fetch.call_count, 2)
+        sleep.assert_called_once()
+
+    @patch("vps_stock.time.monotonic", side_effect=[0.0, 5.1])
+    @patch("vps_stock.time.sleep")
+    @patch("vps_stock.fetch", side_effect=RuntimeError("timed out"))
+    def test_official_fetch_does_not_retry_after_its_timeout_budget(
+        self, fetch, sleep, monotonic
+    ):
+        with self.assertRaisesRegex(RuntimeError, "timed out"):
+            vps_stock._fetch_official("https://example.com/store", timeout=5)
+
+        fetch.assert_called_once_with("https://example.com/store", timeout=5)
+        sleep.assert_not_called()
+
     def test_opencli_legacy_timestamp_is_normalized_to_iso(self):
         posts = _parse_twitter_posts(
             json.dumps([{"id": "1", "text": "restock", "author": "w", "created_at": "Fri Jul 17 06:36:38 +0000 2026"}]),
@@ -1128,8 +1215,278 @@ Out of Stock
         self.assertEqual(exit_code, 0)
         output = json.loads(stdout.getvalue())
         self.assertIn("transitions", output)
-        self.assertEqual(output["transitions"][0]["event"], "social_lead")
+        self.assertEqual(output["transitions"], [])
+        self.assertTrue(output["baseline_created"])
         self.assertNotIn("items", output)
+
+    @patch("vps_stock._append_memory_line")
+    @patch("vps_stock.check_provider")
+    @patch("vps_stock.select_sources")
+    def test_main_persists_run_report_and_previous_state(self, select_sources_mock, check_provider_mock, append_memory):
+        provider = {
+            "id": "dmit-reddit",
+            "provider": "DMIT",
+            "region": "US",
+            "priority": "cn2",
+            "network": "community Reddit leads",
+            "url": "https://www.reddit.com/search/?q=DMIT",
+            "kind": "reddit_search",
+        }
+        old_state = {
+            "dmit-reddit": {
+                "id": "dmit-reddit",
+                "status": "lead",
+                "posts": [{"id": "reddit:old"}],
+            }
+        }
+        result = {
+            "id": "dmit-reddit",
+            "provider": "DMIT",
+            "region": "US",
+            "status": "lead",
+            "confidence": "low",
+            "posts": [{"id": "reddit:new"}],
+        }
+        select_sources_mock.return_value = [provider]
+        check_provider_mock.return_value = result
+
+        with tempfile.TemporaryDirectory() as directory:
+            state_file = Path(directory) / "state.json"
+            state_file.write_text(json.dumps(old_state), encoding="utf-8")
+            with patch("sys.stdout", io.StringIO()):
+                exit_code = main(["--state-file", str(state_file)])
+
+            previous_state = json.loads(Path(str(state_file) + ".prev").read_text(encoding="utf-8"))
+            run_report = json.loads(Path(str(state_file) + ".last-run.json").read_text(encoding="utf-8"))
+
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(previous_state, old_state)
+        self.assertEqual(run_report["transitions"][0]["event"], "social_lead")
+        self.assertEqual(run_report["transitions"][0]["new_post_ids"], ["reddit:new"])
+        self.assertEqual(run_report["exceptions"], [])
+
+    @patch("vps_stock._append_memory_line")
+    @patch("vps_stock.check_provider")
+    @patch("vps_stock.select_sources")
+    def test_main_preserves_unselected_and_failed_last_good_state(
+        self, select_sources_mock, check_provider_mock, append_memory
+    ):
+        provider = {
+            "id": "dmit-reddit",
+            "provider": "DMIT",
+            "region": "US",
+            "priority": "cn2",
+            "network": "community Reddit leads",
+            "url": "https://www.reddit.com/search/?q=DMIT",
+            "kind": "reddit_search",
+        }
+        old_state = {
+            "dmit-reddit": {
+                "id": "dmit-reddit",
+                "provider": "DMIT",
+                "status": "lead",
+                "posts": [{"id": "reddit:known", "created_at": time.time()}],
+            },
+            "omitted-official": {
+                "id": "omitted-official",
+                "provider": "Other",
+                "status": "out_of_stock",
+            },
+        }
+        failed = {
+            "id": "dmit-reddit",
+            "provider": "DMIT",
+            "region": "US",
+            "status": "unreachable",
+            "confidence": "none",
+            "reason": "temporary timeout",
+        }
+        select_sources_mock.return_value = [provider]
+        check_provider_mock.return_value = failed
+
+        with tempfile.TemporaryDirectory() as directory:
+            state_file = Path(directory) / "state.json"
+            state_file.write_text(json.dumps(old_state), encoding="utf-8")
+            stdout = io.StringIO()
+            with patch("sys.stdout", stdout):
+                exit_code = main(["--state-file", str(state_file)])
+            saved = json.loads(state_file.read_text(encoding="utf-8"))
+
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(saved["dmit-reddit"]["status"], "lead")
+        self.assertIn("omitted-official", saved)
+        output = json.loads(stdout.getvalue())
+        self.assertEqual(output["run_status"], "degraded")
+        self.assertEqual(output["exceptions"][0]["id"], "dmit-reddit")
+
+    @patch("vps_stock._append_memory_line")
+    @patch("vps_stock.check_provider")
+    @patch("vps_stock.select_sources")
+    def test_main_rejects_invalid_state_without_fetch_or_overwrite(
+        self, select_sources_mock, check_provider_mock, append_memory
+    ):
+        select_sources_mock.return_value = []
+        with tempfile.TemporaryDirectory() as directory:
+            state_file = Path(directory) / "state.json"
+            original = "[]\n"
+            state_file.write_text(original, encoding="utf-8")
+            with patch("sys.stderr", io.StringIO()):
+                exit_code = main(["--state-file", str(state_file)])
+
+            self.assertEqual(exit_code, 2)
+            self.assertEqual(state_file.read_text(encoding="utf-8"), original)
+            check_provider_mock.assert_not_called()
+
+    @patch("vps_stock.check_provider")
+    def test_run_checks_isolates_provider_errors_and_circuit_breaks_x_429(self, check):
+        providers = [
+            {
+                "id": "x-first",
+                "provider": "X",
+                "region": "global",
+                "priority": "value",
+                "network": "social",
+                "url": "https://x.com/search?q=first",
+                "kind": "twitter_search",
+            },
+            {
+                "id": "x-second",
+                "provider": "X",
+                "region": "global",
+                "priority": "value",
+                "network": "social",
+                "url": "https://x.com/search?q=second",
+                "kind": "twitter_discovery",
+            },
+            {
+                "id": "official",
+                "provider": "Official",
+                "region": "US",
+                "priority": "value",
+                "network": "web",
+                "url": "https://example.com",
+                "kind": "html",
+            },
+        ]
+        check.side_effect = [
+            {
+                "id": "x-first",
+                "provider": "X",
+                "status": "unreachable",
+                "reason": "HTTP 429: retry after cooldown",
+            },
+            ValueError("parser drift"),
+        ]
+
+        results = vps_stock.run_checks(providers, timeout=5, social_timeout=5)
+
+        self.assertEqual([item["id"] for item in results], ["x-first", "x-second", "official"])
+        self.assertEqual(results[1]["status"], "skipped_dependency")
+        self.assertEqual(results[2]["status"], "unreachable")
+        self.assertIn("ValueError", results[2]["reason"])
+        self.assertEqual(check.call_count, 2)
+
+    @patch("vps_stock.check_provider")
+    def test_run_checks_marks_remaining_sources_when_run_deadline_is_exhausted(self, check):
+        provider = {
+            "id": "official",
+            "provider": "Official",
+            "region": "US",
+            "priority": "value",
+            "network": "web",
+            "url": "https://example.com",
+            "kind": "html",
+        }
+        with patch("vps_stock.time.monotonic", side_effect=[0.0, 2.0]):
+            results = vps_stock.run_checks(
+                [provider],
+                timeout=5,
+                social_timeout=5,
+                run_timeout=1,
+            )
+
+        self.assertEqual(results[0]["status"], "skipped_dependency")
+        check.assert_not_called()
+
+    def test_atomic_write_keeps_existing_file_if_replace_fails(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "state.json"
+            path.write_text("old\n", encoding="utf-8")
+            with patch("vps_stock.os.replace", side_effect=OSError("replace failed")):
+                with self.assertRaises(OSError):
+                    vps_stock._atomic_write_text(path, "new\n")
+            self.assertEqual(path.read_text(encoding="utf-8"), "old\n")
+
+    @patch("vps_stock._append_memory_line")
+    @patch("vps_stock._notify")
+    @patch("vps_stock.check_provider")
+    @patch("vps_stock.select_sources")
+    def test_notification_failure_keeps_pending_event_without_repeating_transition(
+        self, select_sources_mock, check_provider_mock, notify, append_memory
+    ):
+        provider = {
+            "id": "official",
+            "provider": "Official",
+            "region": "US",
+            "priority": "value",
+            "network": "web",
+            "url": "https://example.com/store",
+            "kind": "html",
+        }
+        old_state = {
+            "official": {
+                "id": "official",
+                "provider": "Official",
+                "status": "out_of_stock",
+            }
+        }
+        available = {
+            "id": "official",
+            "provider": "Official",
+            "region": "US",
+            "status": "available",
+            "confidence": "high",
+            "plans": [],
+        }
+        select_sources_mock.return_value = [provider]
+        check_provider_mock.return_value = available
+        notify.side_effect = [RuntimeError("webhook down"), None]
+
+        with tempfile.TemporaryDirectory() as directory:
+            state_file = Path(directory) / "state.json"
+            pending_file = Path(str(state_file) + ".pending-notification.json")
+            state_file.write_text(json.dumps(old_state), encoding="utf-8")
+            with patch("sys.stderr", io.StringIO()):
+                first_exit = main(
+                    [
+                        "--state-file",
+                        str(state_file),
+                        "--notify-url",
+                        "https://notify.example/hook",
+                    ]
+                )
+            self.assertEqual(first_exit, 2)
+            self.assertTrue(pending_file.exists())
+            self.assertEqual(
+                json.loads(state_file.read_text(encoding="utf-8"))["official"]["status"],
+                "available",
+            )
+
+            stdout = io.StringIO()
+            with patch("sys.stdout", stdout):
+                second_exit = main(
+                    [
+                        "--state-file",
+                        str(state_file),
+                        "--notify-url",
+                        "https://notify.example/hook",
+                    ]
+                )
+
+            self.assertEqual(second_exit, 0)
+            self.assertFalse(pending_file.exists())
+            self.assertEqual(json.loads(stdout.getvalue())["transitions"], [])
+            self.assertEqual(notify.call_count, 2)
 
     def test_new_twitter_post_is_a_transition(self):
         result = {
@@ -1143,6 +1500,64 @@ Out of Stock
         transitions = find_transitions([result], old)
         self.assertEqual(len(transitions), 1)
         self.assertEqual(transitions[0]["event"], "social_lead")
+
+    def test_seen_social_post_is_not_repeated_after_empty_success(self):
+        result = {
+            "id": "dmit-x",
+            "status": "lead",
+            "posts": [{"id": "x:known"}],
+        }
+        old = {
+            "dmit-x": {
+                "status": "no_recent_signal",
+                "posts": [],
+                "seen_post_ids": ["x:known"],
+            }
+        }
+        self.assertEqual(find_transitions([result], old), [])
+
+    def test_source_recovery_after_initial_failure_only_establishes_baseline(self):
+        failed = {
+            "id": "new-official",
+            "provider": "New Official",
+            "region": "US",
+            "status": "unreachable",
+            "reason": "temporary timeout",
+        }
+        state = vps_stock.merge_state({}, [failed])
+        self.assertEqual(state["new-official"]["status"], "unobserved")
+        self.assertEqual(
+            state["new-official"]["last_attempt"]["status"],
+            "unreachable",
+        )
+
+        available = {
+            "id": "new-official",
+            "provider": "New Official",
+            "region": "US",
+            "status": "available",
+        }
+        self.assertEqual(find_transitions([available], state), [])
+
+    def test_failed_attempt_preserves_last_good_status_and_records_attempt(self):
+        old = {
+            "official": {
+                "id": "official",
+                "provider": "Official",
+                "status": "available",
+            }
+        }
+        failed = {
+            "id": "official",
+            "provider": "Official",
+            "status": "unknown",
+            "reason": "parser drift",
+        }
+
+        merged = vps_stock.merge_state(old, [failed])
+
+        self.assertEqual(merged["official"]["status"], "available")
+        self.assertEqual(merged["official"]["last_attempt"]["status"], "unknown")
 
     def test_discovery_filter_keeps_recent_concrete_unlisted_vps_lead(self):
         now = 2_000_000_000

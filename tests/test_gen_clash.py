@@ -111,6 +111,16 @@ class GenerateClashConfigTest(unittest.TestCase):
                 "claudemcpclient.com",
                 "claudemcpcontent.com",
                 "claudeusercontent.com",
+                "openai.com",
+                "chatgpt.com",
+                "oaistatic.com",
+                "oaiusercontent.com",
+                "gemini.google.com",
+                "aistudio.google.com",
+                "generativelanguage.googleapis.com",
+                "notebooklm.google.com",
+                "perplexity.ai",
+                "cursor.com",
             ):
                 self.assertIn(
                     f"  - DOMAIN-SUFFIX,{domain},🤖 AI 隐私出口", rules
@@ -417,6 +427,73 @@ class GenerateClashConfigTest(unittest.TestCase):
             self.assertFalse(stale.exists())
             self.assertTrue(unrelated.exists())
             self.assertTrue((clients / "cstonecloud-mac.yaml").exists())
+
+    def test_missing_later_device_credentials_preserve_existing_profile_yaml(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            clients = root / "clash-configs"
+            clients.mkdir()
+            existing = clients / "test-mac.yaml"
+            stale = clients / "test-old.yaml"
+            existing.write_text("existing: true\n")
+            stale.write_text("stale: true\n")
+            (root / "deploy.conf").write_text(
+                "REALITY_PORT=443\nREALITY_SNI=\nDEVICES=mac phone\n"
+                "CDN_ENABLE=false\n"
+            )
+            (root / ".secrets.env").write_text(
+                "STATIC_IP=203.0.113.10\nREALITY_PUBLIC=test-public-key\n"
+                "REALITY_SHORTID=0123456789abcdef\nHY2_PORT=31000\n"
+                "ANYTLS_PORT=21000\nANYTLS_PASS=test-anytls-pass\n"
+                "REALITY_UUID_mac=00000000-0000-4000-8000-000000000001\n"
+                "HY2_PASS_mac=test-hy2-mac\n"
+            )
+            env = os.environ.copy()
+            env["NETWORK_NODE_ROOT"] = str(root)
+            env["NETWORK_NODE_STATE_DIR"] = str(root)
+            env["NETWORK_NODE_PROFILE"] = "test"
+
+            result = subprocess.run(
+                [sys.executable, str(GENERATOR)], env=env, text=True,
+                capture_output=True, check=False,
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertEqual(existing.read_text(), "existing: true\n")
+            self.assertEqual(stale.read_text(), "stale: true\n")
+            self.assertFalse((clients / "test-phone.yaml").exists())
+
+    def test_unsafe_client_file_prefix_is_rejected_before_cleanup(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            clients = root / "clash-configs"
+            clients.mkdir()
+            existing = clients / "test-mac.yaml"
+            existing.write_text("existing: true\n")
+            (root / "deploy.conf").write_text(
+                "REALITY_PORT=443\nREALITY_SNI=\nDEVICES=mac\n"
+                "CDN_ENABLE=false\nCLIENT_FILE_PREFIX=../escape\n"
+            )
+            (root / ".secrets.env").write_text(
+                "STATIC_IP=203.0.113.10\nREALITY_PUBLIC=test-public-key\n"
+                "REALITY_SHORTID=0123456789abcdef\nHY2_PORT=31000\n"
+                "ANYTLS_PORT=21000\nANYTLS_PASS=test-anytls-pass\n"
+                "REALITY_UUID_mac=00000000-0000-4000-8000-000000000001\n"
+                "HY2_PASS_mac=test-hy2-mac\n"
+            )
+            env = os.environ.copy()
+            env["NETWORK_NODE_ROOT"] = str(root)
+            env["NETWORK_NODE_STATE_DIR"] = str(root)
+            env["NETWORK_NODE_PROFILE"] = "test"
+
+            result = subprocess.run(
+                [sys.executable, str(GENERATOR)], env=env, text=True,
+                capture_output=True, check=False,
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("CLIENT_FILE_PREFIX", result.stderr)
+            self.assertEqual(existing.read_text(), "existing: true\n")
 
 
 if __name__ == "__main__":
