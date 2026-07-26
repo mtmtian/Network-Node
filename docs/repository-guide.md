@@ -99,7 +99,7 @@ US-CDN      → cdn.example.com → Cloudflare → Tunnel → VPS localhost:8080
 - `PRIVACY_MODE=true`（默认）让 `🇨🇳 国内流量` 首次默认走代理；客户端可手动切到 `DIRECT`，`false` 则让该组首次默认直连。直连时，`geosite:cn` 域名使用阿里云 / 腾讯云的加密 DoH，避免明文 DNS 和海外解析造成的 CDN 绕路；国内 DoH 服务商仍能看到查询出口 IP。其他域名继续使用经代理路由的 Cloudflare / Google DoH。局域网与原有 Apple/Spotify 规则不受影响。
 - CN 判定依次使用 MetaCubeX `cn` 域名集、`cn-ip` 地址集和 Mihomo `GEOIP,CN` 兜底；AI、Google、Apple、Telegram、广告等更高优先级规则先匹配，`private`/LAN 则始终固定直连。
 - `🤖 AI 隐私出口` 只使用共享 Xray IPv4 出口，按 Reality → CDN（启用时）故障切换；STUN 同组且不受 `PRIVACY_MODE` 影响，避免 AI HTTP 与 WebRTC UDP 因双栈或 WARP 显示不同地址。
-- AI 域名使用 MetaCubeX `category-ai-!cn`；常见国际 AI 主域和多数专属子域已覆盖，但共享登录/CDN、直连 IP 和中国 AI 域名不在其完整保证范围内。
+- AI 域名使用 MetaCubeX `category-ai-!cn`，并为 Anthropic/Claude、OpenAI/ChatGPT、Gemini/AI Studio、NotebookLM、Perplexity 和 Cursor 的核心专属域名保留静态锚点；共享登录/CDN、直连 IP 和中国 AI 域名不在其完整保证范围内。
 
 ## Profile 和文件安全边界
 
@@ -115,6 +115,18 @@ profiles/<profile>/
 这些内容全部属于敏感本地状态，不应提交、上传或粘贴到聊天。生成的 YAML 也含真实地址和凭据，因此默认只保存在本机/设备同步目录，不进入 Git。
 
 公共代码只应依赖环境变量和 profile 状态，不要把某台服务器的 IP、域名、Token 或 SSH 文件写进 `core/`、`providers/`、`README.md` 或测试样例。
+
+客户端文件默认使用 `<profile>-<device>.yaml` 命名。如果某台服务器需要更短的设备文件名，可在该 profile 的 `deploy.conf` 设置 `CLIENT_FILE_PREFIX`；前缀和设备名只允许字母、数字、点、下划线和连字符。生成器先验证全部设备凭据并原子替换每份 YAML，全部新文件就绪后才清理当前前缀的旧文件；这只改变 `clash-configs/` 下的文件前缀和清理范围，不改变 profile 状态目录，也不会让不同服务器共用凭据。
+
+### 交接时的文件边界
+
+交接或同步仓库时，只同步公共代码、测试和不含凭据的文档。以下内容始终留在本机或设备同步目录，不应进入提交、压缩包、工单或聊天：
+
+- `profiles/` 下的 `deploy.conf`、`.secrets.env` 和 `ssh/` 私钥；
+- `clash-configs/` 下的客户端 YAML；
+- 本机 MCP、浏览器或其他工具配置，例如 `config/mcporter.json`。
+
+如果部署时临时通过 `VPS_SSH_KEY=/path/to/private-key` 指定了外部私钥，交接前应将它放回对应的 `profiles/<profile>/ssh/`，并确认权限为 `600`。仓库只记录使用方式，不记录私钥路径、内容或服务器凭据。
 
 ## 常用维护动作
 
@@ -163,6 +175,8 @@ git ls-files profiles
 ```
 
 最后一条必须没有输出。生成的 profile、SSH 私钥、`.secrets.env` 和客户端 YAML 都不应进入提交。
+
+交接说明至少应记录：当前分支和提交、已验证的测试/语法检查、主动维护的 profile 名称，以及未同步的本地敏感状态；不要在交接文本中粘贴节点密码、UUID、Token、私钥或客户端 YAML 内容。
 
 ## Graphify 结构审计摘要
 

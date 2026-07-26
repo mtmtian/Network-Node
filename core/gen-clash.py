@@ -11,7 +11,9 @@ Hysteria2 and AnyTLS are fallback options for compatible Mihomo clients.
 """
 import pathlib
 import os
+import re
 import sys
+import tempfile
 
 ROOT = pathlib.Path(os.environ.get("NETWORK_NODE_ROOT", pathlib.Path(__file__).resolve().parent.parent))
 PROFILE = os.environ.get("NETWORK_NODE_PROFILE", "").strip()
@@ -40,8 +42,19 @@ def load_kv(path):
 env = {}
 env.update(load_kv(STATE_DIR / "deploy.conf"))
 env.update(load_kv(STATE_DIR / ".secrets.env"))
+FILE_PREFIX = env.get("CLIENT_FILE_PREFIX", "").strip() or PROFILE
 
 devices = env.get("DEVICES", "mac iphone").split()
+safe_name = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
+if not FILE_PREFIX or not safe_name.fullmatch(FILE_PREFIX):
+    sys.exit(
+        "ERROR: CLIENT_FILE_PREFIX（或 profile 名）只能包含 1-64 位字母、数字、点、下划线和连字符"
+    )
+if not devices or len(devices) != len(set(devices)):
+    sys.exit("ERROR: DEVICES 不能为空或包含重复设备名")
+unsafe_devices = [device for device in devices if not safe_name.fullmatch(device)]
+if unsafe_devices:
+    sys.exit(f"ERROR: DEVICES 包含不安全设备名 {unsafe_devices}")
 
 # ── CDN 套娃出口（可选）──
 # 启用条件：CDN_ENABLE=true 且 CF/WS 参数齐全。启用时把 US-CDN 作为一个普通节点
@@ -75,6 +88,19 @@ if WARP_ENABLE:
 missing = [k for k in required if not env.get(k)]
 if missing:
     sys.exit(f"ERROR: 缺少必要变量 {missing}（应由部署入口自动生成，请检查 profile 状态）")
+for device in devices:
+    if not CDN_ONLY and (
+        not env.get(f"REALITY_UUID_{device}") or not env.get(f"HY2_PASS_{device}")
+    ):
+        sys.exit(
+            f"ERROR: 设备 {device} 缺少 REALITY_UUID_{device} / HY2_PASS_{device}"
+        )
+    if cdn_on and not env.get(f"CDN_UUID_{device}"):
+        sys.exit(f"ERROR: CDN_ENABLE=true 但设备 {device} 缺少 CDN_UUID_{device}")
+    if WARP_ENABLE and not env.get(f"WARP_REALITY_UUID_{device}"):
+        sys.exit(
+            f"ERROR: WARP_ENABLE=true 但设备 {device} 缺少 WARP_REALITY_UUID_{device}"
+        )
 
 HY2_PORT_RANGE = env.get("HY2_PORT_RANGE", "").strip()
 HY2_HOP_INTERVAL = env.get("HY2_HOP_INTERVAL", "").strip()
@@ -286,6 +312,9 @@ dns:
     - https://8.8.8.8/dns-query
   # 国内流量使用国内加密 DNS，避免 DIRECT 连接仍拿海外 DoH 的解析结果或明文泄漏。
   nameserver-policy:
+    '+.cn':
+      - https://223.5.5.5/dns-query
+      - https://120.53.53.53/dns-query
     'geosite:cn':
       - https://223.5.5.5/dns-query
       - https://120.53.53.53/dns-query
@@ -495,6 +524,23 @@ rules:
 
   # --- [P1] STUN 与 AI 固定到同一个 IPv4 Xray 出口，避免 Web/UDP 出口漂移 ---
   - DOMAIN-KEYWORD,stun,🤖 AI 隐私出口
+  # 核心 AI 静态锚点放在动态规则集前，避免首次下载或刷新失败时漏分流。
+  - DOMAIN-SUFFIX,anthropic.com,🤖 AI 隐私出口
+  - DOMAIN-SUFFIX,claude.ai,🤖 AI 隐私出口
+  - DOMAIN-SUFFIX,claude.com,🤖 AI 隐私出口
+  - DOMAIN-SUFFIX,claudemcpclient.com,🤖 AI 隐私出口
+  - DOMAIN-SUFFIX,claudemcpcontent.com,🤖 AI 隐私出口
+  - DOMAIN-SUFFIX,claudeusercontent.com,🤖 AI 隐私出口
+  - DOMAIN-SUFFIX,openai.com,🤖 AI 隐私出口
+  - DOMAIN-SUFFIX,chatgpt.com,🤖 AI 隐私出口
+  - DOMAIN-SUFFIX,oaistatic.com,🤖 AI 隐私出口
+  - DOMAIN-SUFFIX,oaiusercontent.com,🤖 AI 隐私出口
+  - DOMAIN-SUFFIX,gemini.google.com,🤖 AI 隐私出口
+  - DOMAIN-SUFFIX,aistudio.google.com,🤖 AI 隐私出口
+  - DOMAIN-SUFFIX,generativelanguage.googleapis.com,🤖 AI 隐私出口
+  - DOMAIN-SUFFIX,notebooklm.google.com,🤖 AI 隐私出口
+  - DOMAIN-SUFFIX,perplexity.ai,🤖 AI 隐私出口
+  - DOMAIN-SUFFIX,cursor.com,🤖 AI 隐私出口
   - RULE-SET,ai,🤖 AI 隐私出口
   - RULE-SET,google,🌐 代理流量
 
@@ -549,6 +595,8 @@ rules:
   # --- [P8] 内网始终直连；公开 CN 流量可在客户端手动切换 ---
   - RULE-SET,private,DIRECT
   - RULE-SET,private-ip,DIRECT,no-resolve
+  # 部分国内产品未及时进入 geosite:cn；先按 .cn 后缀送入国内流量组。
+  - DOMAIN-SUFFIX,cn,🇨🇳 国内流量
   - RULE-SET,cn,🇨🇳 国内流量
   - RULE-SET,cn-ip,🇨🇳 国内流量,no-resolve
   - GEOIP,LAN,DIRECT,no-resolve
@@ -558,22 +606,12 @@ rules:
   - MATCH,🎯 兜底策略
 """
 
-OUT_DIR.mkdir(parents=True, exist_ok=True, mode=0o700)
-OUT_DIR.chmod(0o700)
-stale_pattern = f"{PROFILE}-*.yaml" if PROFILE else "*.yaml"
-for stale in OUT_DIR.glob(stale_pattern):
-    stale.unlink()
+rendered = {}
 for dev in devices:
     uuid = env.get(f"REALITY_UUID_{dev}")
     hy2pw = env.get(f"HY2_PASS_{dev}")
-    if not CDN_ONLY and (not uuid or not hy2pw):
-        sys.exit(f"ERROR: 设备 {dev} 缺少 REALITY_UUID_{dev} / HY2_PASS_{dev}")
     dev_cdn_uuid = env.get(f"CDN_UUID_{dev}", "")
-    if cdn_on and not dev_cdn_uuid:
-        sys.exit(f"ERROR: CDN_ENABLE=true 但设备 {dev} 缺少 CDN_UUID_{dev}")
     dev_warp_uuid = env.get(f"WARP_REALITY_UUID_{dev}", "")
-    if WARP_ENABLE and not dev_warp_uuid:
-        sys.exit(f"ERROR: WARP_ENABLE=true 但设备 {dev} 缺少 WARP_REALITY_UUID_{dev}")
 
     reality_proxy, hy2_proxy, anytls_proxy = direct_proxy_blocks(
         uuid or "", f"{dev}:{hy2pw}" if hy2pw else ""
@@ -620,10 +658,37 @@ for dev in devices:
         ALL_PROXIES=node_ref_block(all_nodes),
         **env,
     )
-    filename = f"{PROFILE}-{dev}.yaml" if PROFILE else f"{dev}.yaml"
-    path = OUT_DIR / filename
-    path.write_text(yaml)
-    path.chmod(0o600)
-    print(f"  wrote {path.name} ({len(yaml)} bytes)")
+    filename = f"{FILE_PREFIX}-{dev}.yaml" if FILE_PREFIX else f"{dev}.yaml"
+    rendered[OUT_DIR / filename] = yaml
+
+OUT_DIR.mkdir(parents=True, exist_ok=True, mode=0o700)
+OUT_DIR.chmod(0o700)
+temporary = []
+try:
+    for path, yaml in rendered.items():
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=OUT_DIR,
+            prefix=f".{path.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as handle:
+            handle.write(yaml)
+            handle.flush()
+            os.fsync(handle.fileno())
+            temporary.append((pathlib.Path(handle.name), path))
+        pathlib.Path(handle.name).chmod(0o600)
+    for temporary_path, path in temporary:
+        os.replace(temporary_path, path)
+        print(f"  wrote {path.name} ({len(rendered[path])} bytes)")
+finally:
+    for temporary_path, _ in temporary:
+        temporary_path.unlink(missing_ok=True)
+
+expected_paths = set(rendered)
+for stale in OUT_DIR.glob(f"{FILE_PREFIX}-*.yaml"):
+    if stale not in expected_paths:
+        stale.unlink()
 
 print(f"\n全部 {len(devices)} 份配置已写入 {OUT_DIR}")

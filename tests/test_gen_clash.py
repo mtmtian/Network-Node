@@ -87,6 +87,7 @@ class GenerateClashConfigTest(unittest.TestCase):
             self.assertIn("https://1.1.1.1/dns-query", overseas_dns)
             self.assertIn("https://8.8.8.8/dns-query", overseas_dns)
             self.assertIn("  nameserver-policy:", mac)
+            self.assertIn("    '+.cn':", mac)
             self.assertIn("    'geosite:cn':", mac)
             cn_dns_policy = mac.split("  nameserver-policy:", 1)[1].split(
                 "\n\nproxies:", 1
@@ -96,11 +97,39 @@ class GenerateClashConfigTest(unittest.TestCase):
             self.assertNotIn("https://1.12.12.12/dns-query", cn_dns_policy)
             self.assertNotIn("\n      - 223.5.5.5", cn_dns_policy)
             self.assertNotIn("\n      - 119.29.29.29", cn_dns_policy)
+            self.assertIn("DOMAIN-SUFFIX,cn,🇨🇳 国内流量", mac)
             self.assertNotIn('    - "stun.*"', mac)
             self.assertIn('name: "🤖 AI 隐私出口"', mac)
             ai_group = mac.split('name: "🤖 AI 隐私出口"', 1)[1].split(
                 'name: "🛟 自动故障切换"', 1
             )[0]
+            rules = mac.split("rules:\n", 1)[1]
+            ai_rule = rules.index("  - RULE-SET,ai,🤖 AI 隐私出口")
+            for domain in (
+                "anthropic.com",
+                "claude.ai",
+                "claude.com",
+                "claudemcpclient.com",
+                "claudemcpcontent.com",
+                "claudeusercontent.com",
+                "openai.com",
+                "chatgpt.com",
+                "oaistatic.com",
+                "oaiusercontent.com",
+                "gemini.google.com",
+                "aistudio.google.com",
+                "generativelanguage.googleapis.com",
+                "notebooklm.google.com",
+                "perplexity.ai",
+                "cursor.com",
+            ):
+                self.assertIn(
+                    f"  - DOMAIN-SUFFIX,{domain},🤖 AI 隐私出口", rules
+                )
+                self.assertLess(
+                    rules.index(f"  - DOMAIN-SUFFIX,{domain},🤖 AI 隐私出口"),
+                    ai_rule,
+                )
             self.assertIn("    type: fallback", ai_group)
             self.assertIn('      - "US-Reality"', ai_group)
             self.assertNotIn('      - "US-HY2"', ai_group)
@@ -375,6 +404,106 @@ class GenerateClashConfigTest(unittest.TestCase):
             self.assertTrue(unrelated.exists())
             self.assertFalse(stale.exists())
             self.assertTrue((clients / "dmit-mac.yaml").exists())
+
+    def test_custom_client_file_prefix_does_not_change_profile_state(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            clients = root / "clash-configs"
+            clients.mkdir()
+            stale = clients / "cstonecloud-old.yaml"
+            stale.write_text("stale: true\n")
+            unrelated = clients / "gcloud-old.yaml"
+            unrelated.write_text("preserve: true\n")
+            (root / "deploy.conf").write_text(
+                "REALITY_PORT=443\nREALITY_SNI=\nDEVICES=mac\n"
+                "CDN_ENABLE=false\nCLIENT_FILE_PREFIX=cstonecloud\n"
+            )
+            (root / ".secrets.env").write_text(
+                "STATIC_IP=203.0.113.10\nREALITY_PUBLIC=test-public-key\n"
+                "REALITY_SHORTID=0123456789abcdef\nHY2_PORT=31000\n"
+                "ANYTLS_PORT=21000\nANYTLS_PASS=test-anytls-pass\n"
+                "REALITY_UUID_mac=00000000-0000-4000-8000-000000000001\n"
+                "HY2_PASS_mac=test-hy2-mac\n"
+            )
+            env = os.environ.copy()
+            env["NETWORK_NODE_ROOT"] = str(root)
+            env["NETWORK_NODE_STATE_DIR"] = str(root)
+            env["NETWORK_NODE_PROFILE"] = "cstonecloud-cuii-a"
+            result = subprocess.run(
+                [sys.executable, str(GENERATOR)], env=env, text=True,
+                capture_output=True, check=False,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertFalse(stale.exists())
+            self.assertTrue(unrelated.exists())
+            self.assertTrue((clients / "cstonecloud-mac.yaml").exists())
+
+    def test_missing_later_device_credentials_preserve_existing_profile_yaml(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            clients = root / "clash-configs"
+            clients.mkdir()
+            existing = clients / "test-mac.yaml"
+            stale = clients / "test-old.yaml"
+            existing.write_text("existing: true\n")
+            stale.write_text("stale: true\n")
+            (root / "deploy.conf").write_text(
+                "REALITY_PORT=443\nREALITY_SNI=\nDEVICES=mac phone\n"
+                "CDN_ENABLE=false\n"
+            )
+            (root / ".secrets.env").write_text(
+                "STATIC_IP=203.0.113.10\nREALITY_PUBLIC=test-public-key\n"
+                "REALITY_SHORTID=0123456789abcdef\nHY2_PORT=31000\n"
+                "ANYTLS_PORT=21000\nANYTLS_PASS=test-anytls-pass\n"
+                "REALITY_UUID_mac=00000000-0000-4000-8000-000000000001\n"
+                "HY2_PASS_mac=test-hy2-mac\n"
+            )
+            env = os.environ.copy()
+            env["NETWORK_NODE_ROOT"] = str(root)
+            env["NETWORK_NODE_STATE_DIR"] = str(root)
+            env["NETWORK_NODE_PROFILE"] = "test"
+
+            result = subprocess.run(
+                [sys.executable, str(GENERATOR)], env=env, text=True,
+                capture_output=True, check=False,
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertEqual(existing.read_text(), "existing: true\n")
+            self.assertEqual(stale.read_text(), "stale: true\n")
+            self.assertFalse((clients / "test-phone.yaml").exists())
+
+    def test_unsafe_client_file_prefix_is_rejected_before_cleanup(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            clients = root / "clash-configs"
+            clients.mkdir()
+            existing = clients / "test-mac.yaml"
+            existing.write_text("existing: true\n")
+            (root / "deploy.conf").write_text(
+                "REALITY_PORT=443\nREALITY_SNI=\nDEVICES=mac\n"
+                "CDN_ENABLE=false\nCLIENT_FILE_PREFIX=../escape\n"
+            )
+            (root / ".secrets.env").write_text(
+                "STATIC_IP=203.0.113.10\nREALITY_PUBLIC=test-public-key\n"
+                "REALITY_SHORTID=0123456789abcdef\nHY2_PORT=31000\n"
+                "ANYTLS_PORT=21000\nANYTLS_PASS=test-anytls-pass\n"
+                "REALITY_UUID_mac=00000000-0000-4000-8000-000000000001\n"
+                "HY2_PASS_mac=test-hy2-mac\n"
+            )
+            env = os.environ.copy()
+            env["NETWORK_NODE_ROOT"] = str(root)
+            env["NETWORK_NODE_STATE_DIR"] = str(root)
+            env["NETWORK_NODE_PROFILE"] = "test"
+
+            result = subprocess.run(
+                [sys.executable, str(GENERATOR)], env=env, text=True,
+                capture_output=True, check=False,
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("CLIENT_FILE_PREFIX", result.stderr)
+            self.assertEqual(existing.read_text(), "existing: true\n")
 
 
 if __name__ == "__main__":

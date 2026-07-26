@@ -123,9 +123,11 @@ GCP 和 VPS 真正变化的只有服务器生命周期、连接方式与防火�
 
 当 `PRIVACY_MODE=false`，或手动把 `🇨🇳 国内流量` 切到 `DIRECT` 时，`geosite:cn` 域名通过阿里云 / 腾讯云的加密 DoH 解析，解析结果与国内直连出口保持同区，避免海外 DNS 导致 CDN 绕路；这不会产生明文 DNS 请求，但国内 DoH 服务商仍能看到查询出口 IP。其他域名继续使用经代理路由的 Cloudflare / Google DoH，STUN 仍固定走 `🤖 AI 隐私出口`，不受 `PRIVACY_MODE` 影响。DNS 在 Stash 使用 `follow-rule`、在 Mihomo 使用 `respect-rules`，并保留独立 bootstrap 解析器防止递归依赖。
 
+为覆盖尚未及时进入 `geosite:cn` 的国内产品，生成器还会把所有 `.cn` 域名显式送入 `🇨🇳 国内流量`，并为这些域名优先使用国内 DNS；因此切换该组为 `DIRECT` 后，域名路由和解析会同时走国内路径。
+
 普通流量默认使用 `🛟 自动故障切换`：Reality 正常时行为不变，连接失败时按 Reality → CDN → Hysteria2 → AnyTLS 顺序切换。AI 域名和 STUN 使用单独的 `🤖 AI 隐私出口`，按 Reality → CDN（启用时）切换；两条入口共用服务端 Xray IPv4 出口，不加入 HY2、AnyTLS 或 WARP。CDN-only 时该组只使用 CDN。
 
-AI 规则来自 MetaCubeX `category-ai-!cn`，通过域名后缀覆盖 OpenAI、Claude、Gemini、NotebookLM、Perplexity、Copilot、Cursor、Grok 等常见国际 AI 服务及多数专属子域名。它不保证覆盖共享登录/CDN 域名、直接连接的 IP，也不包含 DeepSeek、通义、Kimi、豆包等中国 AI 域名；这些流量继续由后续 Google、CN 或兜底规则处理。
+AI 规则来自 MetaCubeX `category-ai-!cn`，并为 Anthropic/Claude、OpenAI/ChatGPT、Gemini/AI Studio、NotebookLM、Perplexity 和 Cursor 的核心专属域名保留静态锚点；规则集首次下载或刷新失败时，这些主链路仍固定走 AI 隐私出口。它不保证覆盖共享登录/CDN 域名、直接连接的 IP，也不包含 DeepSeek、通义、Kimi、豆包等中国 AI 域名；这些流量继续由后续 Google、CN 或兜底规则处理。
 
 `US-Reality-WARP` 仅保留为手动可选节点，不进入自动测速或自动故障切换，避免自动选择改变公网出口。
 如需真正隐藏源站 IP，把 `CDN_ENABLE=true` 和 `CDN_ONLY=true` 同时设置；这会关闭直连 Reality/Hysteria2/AnyTLS，保留 Cloudflare WS 入口。

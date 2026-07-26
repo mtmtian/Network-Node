@@ -16,6 +16,7 @@ import re
 import signal
 import subprocess
 import sys
+import tempfile
 import time
 from datetime import date, datetime, timedelta
 from html.parser import HTMLParser
@@ -122,6 +123,36 @@ PROVIDERS: List[Dict[str, Any]] = [
         "focus": True,
     },
     {
+        "id": "yt-net-us-lax-a-22",
+        "provider": "YT.NET",
+        "region": "Los Angeles, US",
+        "kind": "yt_net_markdown",
+        "url": "https://cloud.yt.net/deploy/us-lax",
+        "fetch_url": "https://r.jina.ai/https://cloud.yt.net/deploy/us-lax",
+        "plan_name": "US.LAX.A",
+        "target_price": 22.0,
+        "target_currency": "CNY",
+        "target_period": "month",
+        "priority": "value",
+        "network": "Los Angeles premium route; China optimization unconfirmed",
+        "focus": True,
+    },
+    {
+        "id": "yt-net-us-lax-b-35",
+        "provider": "YT.NET",
+        "region": "Los Angeles, US",
+        "kind": "yt_net_markdown",
+        "url": "https://cloud.yt.net/deploy/us-lax",
+        "fetch_url": "https://r.jina.ai/https://cloud.yt.net/deploy/us-lax",
+        "plan_name": "US.LAX.B",
+        "target_price": 35.0,
+        "target_currency": "CNY",
+        "target_period": "month",
+        "priority": "value",
+        "network": "Los Angeles premium route; China optimization unconfirmed",
+        "focus": True,
+    },
+    {
         "id": "novixlink-ntt-isp-vps",
         "provider": "NovixLink",
         "region": "Los Angeles, US",
@@ -141,6 +172,20 @@ PROVIDERS: List[Dict[str, Any]] = [
         "fetch_url": "https://r.jina.ai/http://novixlink.com/store/us-lacup-isp",
         "priority": "cn2",
         "network": "AS9929 / CMIN2 three-network optimized, GTT dual residential ISP",
+        "focus": True,
+    },
+    {
+        "id": "zorocloud-jp-titan-plus-138",
+        "provider": "ZoroCloud",
+        "region": "Japan",
+        "kind": "zorocloud_html",
+        "url": "https://my.zorocloud.com/store/jpisp",
+        "plan_name": "JP-Titan-Plus",
+        "target_price": 138.0,
+        "target_currency": "CNY",
+        "target_period": "month",
+        "priority": "value",
+        "network": "Japan residential dual ISP; provider claim",
         "focus": True,
     },
     {
@@ -440,6 +485,8 @@ _COUNTED_PLAN = re.compile(
 _NOVIXLINK_PLAN = re.compile(r"(?m)^###\s+(?P<plan>LAX-[^\n]+)\s*$")
 _NOVIXLINK_CAD_PRICE = re.compile(r"\$\s*(?P<amount>\d+(?:\.\d+)?)\s*CAD\b", re.IGNORECASE)
 _NOVIXLINK_USD_PRICE = re.compile(r"~\s*\$\s*(?P<amount>\d+(?:\.\d+)?)\s*USD\b", re.IGNORECASE)
+_YT_NET_PLAN = re.compile(r"(?m)^###\s+(?P<plan>US\.LAX\.[A-Z])\s*$")
+_YT_NET_MONTHLY_PRICE = re.compile(r"¥\s*(?P<amount>\d+(?:\.\d+)?)\s*/\s*月")
 
 _TWITTER_POSITIVE = ("coupon", "sale", "discount", "promo", "restock", "in stock", "available", "优惠", "折扣", "优惠码", "补货", "有货", "上架", "开售")
 _TWITTER_NEGATIVE = ("out of stock", "sold out", "unavailable", "无货", "缺货", "断货", "售罄", "抢空")
@@ -631,6 +678,8 @@ def filter_discovery_posts(
     leads = []
     seen = set()
     for post in posts:
+        if not isinstance(post, dict):
+            continue
         post_id = str(post.get("id", ""))
         url = str(post.get("url", ""))
         if not post_id or post_id in seen:
@@ -821,6 +870,76 @@ def check_novixlink_markdown(provider: Dict[str, Any], status_code: int, text: s
     return result
 
 
+def check_zorocloud_html(provider: Dict[str, Any], status_code: int, text: str) -> Dict[str, Any]:
+    result = _base_result(provider)
+    if status_code in (401, 403, 429):
+        result["status"] = "blocked"
+        result["reason"] = "provider anti-bot or rate-limit response (HTTP %s)" % status_code
+        return result
+    if status_code >= 400:
+        result["status"] = "unreachable"
+        result["reason"] = "HTTP %s" % status_code
+        return result
+
+    target_name = provider["plan_name"]
+    target_price = float(provider["target_price"])
+    headings = list(re.finditer(r'<h3\b[^>]*class=["\']package-title["\'][^>]*>\s*([^<]+?)\s*</h3>', text, re.IGNORECASE))
+    target_heading = next((heading for heading in headings if heading.group(1).strip() == target_name), None)
+    if target_heading is None:
+        result["reason"] = "official ZoroCloud page has no matching target plan"
+        return result
+
+    section_start = text.rfind('<div class="package', 0, target_heading.start())
+    next_column = text.find('<div class="col">', target_heading.end())
+    section = text[section_start : next_column if next_column != -1 else len(text)]
+    price_match = re.search(r"¥\s*(?P<amount>\d+(?:\.\d+)?)\s*CNY", section, re.IGNORECASE)
+    count_match = re.search(r"(?P<count>\d+)\s*可用", section)
+    if not price_match:
+        result["reason"] = "official ZoroCloud target plan exposes no parseable price"
+        return result
+    if float(price_match.group("amount")) != target_price:
+        result["status"] = "offer_changed"
+        result["reason"] = "official ZoroCloud page has the target plan but not the configured price"
+        return result
+
+    button_match = re.search(r"<a\b(?P<attrs>[^>]*)>\s*立即购买\s*</a>", section, re.IGNORECASE | re.DOTALL)
+    sold_out = bool(re.search(r"缺货|售罄|out of stock|sold out|unavailable", section, re.IGNORECASE))
+    if not count_match and not button_match:
+        result["reason"] = "official ZoroCloud page exposes the target plan and price but no inventory or order action"
+        return result
+
+    count = int(count_match.group("count")) if count_match else None
+    button_disabled = bool(button_match and re.search(r"\bdisabled\b", button_match.group("attrs"), re.IGNORECASE))
+    available = (
+        count > 0 and not button_disabled and not sold_out
+        if count is not None
+        else bool(button_match) and not button_disabled and not sold_out
+    )
+    result["plans"] = [
+        {
+            "plan": target_name,
+            "product_url": provider["url"],
+            "price": {
+                "amount": target_price,
+                "currency": provider.get("target_currency", "CNY"),
+                "period": provider.get("target_period", "month"),
+                "monthly_equivalent": target_price,
+                "price_eligible": None,
+            },
+            "count": count,
+            "available": available,
+        }
+    ]
+    result["status"] = "available" if available else "out_of_stock"
+    result["confidence"] = "high" if count is not None else "medium"
+    result["reason"] = (
+        "official ZoroCloud page exposes target plan price, inventory count, and order state"
+        if count is not None
+        else "official ZoroCloud page exposes the target price and order action; numeric inventory is not published"
+    )
+    return result
+
+
 def check_colocrossing_markdown(provider: Dict[str, Any], status_code: int, text: str) -> Dict[str, Any]:
     result = _base_result(provider)
     if status_code in (401, 403, 429):
@@ -880,6 +999,63 @@ def check_colocrossing_markdown(provider: Dict[str, Any], status_code: int, text
         result["status"] = "catalog_only"
         result["confidence"] = "low"
         result["reason"] = "official ColoCrossing page exposes the target plan and price but no configuration action"
+    return result
+
+
+def check_yt_net_markdown(provider: Dict[str, Any], status_code: int, text: str) -> Dict[str, Any]:
+    result = _base_result(provider)
+    if status_code in (401, 403, 429):
+        result["status"] = "blocked"
+        result["reason"] = "provider anti-bot or rate-limit response (HTTP %s)" % status_code
+        return result
+    if status_code >= 400:
+        result["status"] = "unreachable"
+        result["reason"] = "HTTP %s" % status_code
+        return result
+
+    target_name = provider["plan_name"]
+    target_price = float(provider["target_price"])
+    headings = list(_YT_NET_PLAN.finditer(text))
+    target_heading = next((heading for heading in headings if heading.group("plan") == target_name), None)
+    if target_heading is None:
+        result["reason"] = "official YT.NET deployment page has no matching target plan"
+        return result
+
+    heading_index = headings.index(target_heading)
+    section_end = headings[heading_index + 1].start() if heading_index + 1 < len(headings) else len(text)
+    section = text[target_heading.end() : section_end]
+    prices = [float(match.group("amount")) for match in _YT_NET_MONTHLY_PRICE.finditer(section)]
+    if not prices:
+        result["reason"] = "official YT.NET target plan exposes no parseable CNY monthly price"
+        return result
+    if target_price not in prices:
+        result["status"] = "offer_changed"
+        result["observed_prices"] = prices
+        result["reason"] = "official YT.NET target plan no longer exposes the configured CNY monthly price"
+        return result
+
+    sold_out = bool(re.search(r"缺货|售罄|out of stock|sold out|unavailable", section, re.IGNORECASE))
+    result["plans"] = [
+        {
+            "plan": target_name,
+            "product_url": provider["url"],
+            "price": {
+                "amount": target_price,
+                "currency": provider.get("target_currency", "CNY"),
+                "period": provider.get("target_period", "month"),
+                "monthly_equivalent": target_price,
+                "price_eligible": None,
+            },
+            "available": not sold_out,
+        }
+    ]
+    result["status"] = "out_of_stock" if sold_out else "available"
+    result["confidence"] = "medium"
+    result["reason"] = (
+        "official YT.NET deployment page marks the target plan sold out"
+        if sold_out
+        else "official YT.NET deployment page exposes the target CNY price without a sold-out label; no numeric inventory count"
+    )
     return result
 
 
@@ -1204,6 +1380,8 @@ def check_twitter(provider: Dict[str, Any], timeout: int = 20, since: Optional[s
 
     leads = []
     for tweet in tweets:
+        if not isinstance(tweet, dict):
+            continue
         text = str(tweet.get("text", ""))
         normalized = text.lower()
         if not any(keyword in normalized for keyword in provider.get("twitter_keywords", [])):
@@ -1606,7 +1784,12 @@ def check_reddit(provider: Dict[str, Any], timeout: int = 20) -> Dict[str, Any]:
     cutoff = time.time() - SOCIAL_LOOKBACK_DAYS * 24 * 60 * 60
     leads = []
     for post in posts:
-        created_at = float(post.get("created_utc", 0))
+        if not isinstance(post, dict):
+            continue
+        try:
+            created_at = float(post.get("created_utc", 0))
+        except (TypeError, ValueError):
+            continue
         text = "%s\n%s" % (post.get("title", ""), post.get("selftext", ""))
         normalized = text.lower()
         if created_at < cutoff or not any(keyword in normalized for keyword in provider["reddit_keywords"]):
@@ -1684,7 +1867,39 @@ def check_reddit_discovery(provider: Dict[str, Any], timeout: int = 20) -> Dict[
     return result
 
 
-def check_provider(provider: Dict[str, Any], timeout: int = 20, social_timeout: Optional[int] = None) -> Dict[str, Any]:
+def _fetch_official(url: str, timeout: int) -> Tuple[int, str]:
+    failure: Optional[RuntimeError] = None
+    deadline = time.monotonic() + max(0, timeout)
+    for attempt in range(2):
+        if attempt == 0:
+            attempt_timeout: float = timeout
+        else:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
+            attempt_timeout = max(0.1, min(float(timeout), remaining))
+        try:
+            status_code, text = fetch(url, timeout=attempt_timeout)
+        except RuntimeError as exc:
+            failure = exc
+        else:
+            if status_code not in {500, 502, 503, 504} or attempt == 1:
+                return status_code, text
+            failure = RuntimeError("HTTP %s" % status_code)
+        if attempt == 0:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
+            time.sleep(min(0.25, max(0.0, timeout / 20), remaining))
+    raise failure or RuntimeError("official source fetch failed")
+
+
+def check_provider(
+    provider: Dict[str, Any],
+    timeout: int = 20,
+    social_timeout: Optional[int] = None,
+    fetch_cache: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
     if social_timeout is not None and provider["kind"] in {
         "twitter_search",
         "reddit_search",
@@ -1705,8 +1920,22 @@ def check_provider(provider: Dict[str, Any], timeout: int = 20, social_timeout: 
         return check_reddit_discovery(provider, timeout)
     if provider["kind"] == "manual":
         return check_manual(provider)
+    fetch_url = provider.get("fetch_url", provider["url"])
     try:
-        status_code, text = fetch(provider.get("fetch_url", provider["url"]), timeout=timeout)
+        cached = fetch_cache.get(fetch_url) if fetch_cache is not None else None
+        if cached is not None:
+            if isinstance(cached, RuntimeError):
+                raise cached
+            status_code, text = cached
+        else:
+            try:
+                status_code, text = _fetch_official(fetch_url, timeout)
+            except RuntimeError as exc:
+                if fetch_cache is not None:
+                    fetch_cache[fetch_url] = exc
+                raise
+            if fetch_cache is not None:
+                fetch_cache[fetch_url] = (status_code, text)
     except RuntimeError as exc:
         result = _base_result(provider)
         result["status"] = "unreachable"
@@ -1724,12 +1953,90 @@ def check_provider(provider: Dict[str, Any], timeout: int = 20, social_timeout: 
         result = check_dedione_html(provider, status_code, text)
     elif provider["kind"] == "novixlink_markdown":
         result = check_novixlink_markdown(provider, status_code, text)
+    elif provider["kind"] == "zorocloud_html":
+        result = check_zorocloud_html(provider, status_code, text)
     elif provider["kind"] == "colocrossing_markdown":
         result = check_colocrossing_markdown(provider, status_code, text)
+    elif provider["kind"] == "yt_net_markdown":
+        result = check_yt_net_markdown(provider, status_code, text)
     else:
         result = check_html(provider, status_code, text)
     result["http_status"] = status_code
     return result
+
+
+def run_checks(
+    providers: Iterable[Dict[str, Any]],
+    timeout: int,
+    social_timeout: int,
+    run_timeout: int = 300,
+) -> List[Dict[str, Any]]:
+    results = []
+    fetch_cache: Dict[str, Any] = {}
+    twitter_failure_count = 0
+    twitter_circuit_reason = ""
+    twitter_kinds = {"twitter_search", "twitter_discovery"}
+    social_kinds = twitter_kinds | {
+        "reddit_search",
+        "reddit_discovery",
+        "exa_discovery",
+    }
+    deadline = time.monotonic() + run_timeout if run_timeout > 0 else None
+    for provider in providers:
+        if deadline is not None:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                result = _base_result(provider)
+                result["status"] = "skipped_dependency"
+                result["reason"] = "run deadline exhausted before this source"
+                results.append(result)
+                continue
+            provider_timeout = max(
+                1,
+                min(
+                    social_timeout if provider["kind"] in social_kinds else timeout,
+                    int(remaining),
+                ),
+            )
+        else:
+            provider_timeout = (
+                social_timeout if provider["kind"] in social_kinds else timeout
+            )
+        if provider["kind"] in twitter_kinds and twitter_circuit_reason:
+            result = _base_result(provider)
+            result["status"] = "skipped_dependency"
+            result["reason"] = "Twitter/X backend circuit open: %s" % twitter_circuit_reason
+            results.append(result)
+            continue
+        try:
+            result = check_provider(
+                provider,
+                provider_timeout,
+                provider_timeout,
+                fetch_cache=fetch_cache,
+            )
+        except Exception as exc:
+            result = _base_result(provider)
+            result["status"] = "unreachable"
+            result["reason"] = "internal check error (%s): %s" % (
+                type(exc).__name__,
+                exc,
+            )
+        if provider["kind"] in twitter_kinds:
+            if result.get("status") == "unreachable":
+                twitter_failure_count += 1
+                reason = str(result.get("reason", ""))
+                normalized = reason.lower()
+                if (
+                    "http 429" in normalized
+                    or "rate-limit" in normalized
+                    or twitter_failure_count >= 2
+                ):
+                    twitter_circuit_reason = reason
+            else:
+                twitter_failure_count = 0
+        results.append(result)
+    return results
 
 
 def select_providers(cn2_only: bool = False, all_providers: bool = False) -> Iterable[Dict[str, Any]]:
@@ -1808,9 +2115,15 @@ def monitorability(cn2_only: bool = False, all_providers: bool = False) -> List[
         elif kind == "novixlink_markdown":
             level = "stock"
             reason = "official NovixLink page exposes per-plan price and order or sold-out state"
+        elif kind == "zorocloud_html":
+            level = "stock"
+            reason = "official ZoroCloud page exposes target plan price, inventory count, and order state"
         elif kind == "colocrossing_markdown":
             level = "order_signal"
             reason = "official configuration page exposes the target monthly price and configure action, but not inventory counts or per-location stock"
+        elif kind == "yt_net_markdown":
+            level = "order_signal"
+            reason = "official YT.NET deployment page exposes the target CNY price and sold-out label, but not a numeric inventory count"
         elif kind == "dedione_html":
             level = "order_signal"
             reason = "official DediOne product card exposes the target price and order action, but not a numeric inventory count"
@@ -1844,6 +2157,56 @@ def _state_path(value: Optional[str]) -> Path:
     if value:
         return Path(value).expanduser()
     return Path.home() / ".cache" / "network-node" / "vps-stock.json"
+
+
+def _previous_state_path(state_file: Path) -> Path:
+    return state_file.with_name(state_file.name + ".prev")
+
+
+def _last_run_path(state_file: Path) -> Path:
+    return state_file.with_name(state_file.name + ".last-run.json")
+
+
+def _pending_notification_path(state_file: Path) -> Path:
+    return state_file.with_name(state_file.name + ".pending-notification.json")
+
+
+def _atomic_write_text(path: Path, content: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, temporary_name = tempfile.mkstemp(
+        dir=path.parent,
+        prefix=".%s." % path.name,
+        suffix=".tmp",
+    )
+    temporary_path = Path(temporary_name)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            handle.write(content)
+            handle.flush()
+            os.fsync(handle.fileno())
+        temporary_path.chmod(0o600)
+        os.replace(temporary_path, path)
+    finally:
+        temporary_path.unlink(missing_ok=True)
+
+
+def _read_state(state_file: Path) -> Tuple[Dict[str, Any], bool]:
+    if not state_file.exists():
+        return {}, False
+    try:
+        payload = json.loads(state_file.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise RuntimeError("cannot read state file: %s" % exc) from exc
+    if not isinstance(payload, dict):
+        raise RuntimeError("state file root must be a JSON object")
+    invalid_ids = [
+        source_id
+        for source_id, item in payload.items()
+        if not isinstance(source_id, str) or not isinstance(item, dict)
+    ]
+    if invalid_ids:
+        raise RuntimeError("state file contains invalid source records")
+    return payload, True
 
 
 def _social_post_created_at(post: Dict[str, Any]) -> Optional[float]:
@@ -1902,6 +2265,87 @@ def prune_state_posts(state: Dict[str, Any], now: Optional[float] = None) -> Dic
     return cleaned
 
 
+_NON_PERSISTENT_STATUSES = {
+    "blocked",
+    "unreachable",
+    "unknown",
+    "skipped_dependency",
+}
+_EXCEPTION_STATUSES = _NON_PERSISTENT_STATUSES | {"offer_changed"}
+_UNOBSERVED_STATUS = "unobserved"
+
+
+def _post_ids(posts: Any) -> List[str]:
+    if not isinstance(posts, list):
+        return []
+    return [
+        str(post["id"])
+        for post in posts
+        if isinstance(post, dict) and post.get("id")
+    ]
+
+
+def _known_post_ids(item: Dict[str, Any]) -> List[str]:
+    known = []
+    stored_seen = item.get("seen_post_ids", [])
+    if not isinstance(stored_seen, list):
+        stored_seen = []
+    for post_id in stored_seen + _post_ids(item.get("posts")):
+        value = str(post_id)
+        if value and value not in known:
+            known.append(value)
+    return known
+
+
+def merge_state(
+    old: Dict[str, Any], results: Iterable[Dict[str, Any]]
+) -> Dict[str, Any]:
+    merged = dict(old)
+    for result in results:
+        source_id = str(result.get("id", ""))
+        if not source_id:
+            continue
+        if result.get("status") in _NON_PERSISTENT_STATUSES:
+            previous = dict(old.get(source_id, {}))
+            if not previous:
+                previous = {
+                    key: result[key]
+                    for key in (
+                        "id",
+                        "provider",
+                        "region",
+                        "priority",
+                        "network",
+                        "source",
+                        "checked_via",
+                    )
+                    if key in result
+                }
+            if previous.get("status") in _NON_PERSISTENT_STATUSES or not previous.get("status"):
+                previous["status"] = _UNOBSERVED_STATUS
+            previous["last_attempt"] = {
+                "status": result.get("status"),
+                "checked_at": result.get("checked_at", int(time.time())),
+                "reason": result.get("reason", ""),
+            }
+            merged[source_id] = previous
+            continue
+        copied = dict(result)
+        previous = old.get(source_id, {})
+        if (
+            "posts" in copied
+            or previous.get("posts") is not None
+            or previous.get("seen_post_ids") is not None
+        ):
+            seen = _known_post_ids(previous)
+            for post_id in _post_ids(copied.get("posts")):
+                if post_id not in seen:
+                    seen.append(post_id)
+            copied["seen_post_ids"] = seen[-200:]
+        merged[source_id] = copied
+    return merged
+
+
 def dedupe_discovery_results(results: Iterable[Dict[str, Any]]) -> List[Dict[str, Any]]:
     seen = set()
     cleaned = []
@@ -1942,9 +2386,36 @@ def _append_memory_line(line: str) -> None:
         print("memory write failed: %s" % exc, file=sys.stderr)
 
 
-def _notify(url: str, transitions: List[Dict[str, Any]], timeout: int) -> None:
-    payload = json.dumps({"event": "vps_stock_transition", "items": transitions}).encode("utf-8")
-    request = Request(url, data=payload, headers={"Content-Type": "application/json"}, method="POST")
+def _notification_record(transitions: List[Dict[str, Any]]) -> Dict[str, Any]:
+    canonical = json.dumps(
+        transitions,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return {
+        "event_id": hashlib.sha256(canonical.encode("utf-8")).hexdigest(),
+        "items": transitions,
+    }
+
+
+def _notify(
+    url: str,
+    transitions: List[Dict[str, Any]],
+    timeout: int,
+    event_id: str = "",
+) -> None:
+    payload = json.dumps(
+        {
+            "event": "vps_stock_transition",
+            "event_id": event_id,
+            "items": transitions,
+        }
+    ).encode("utf-8")
+    headers = {"Content-Type": "application/json"}
+    if event_id:
+        headers["Idempotency-Key"] = event_id
+    request = Request(url, data=payload, headers=headers, method="POST")
     with urlopen(request, timeout=timeout) as response:
         if int(response.status) >= 300:
             raise RuntimeError("notification HTTP %s" % response.status)
@@ -1954,14 +2425,22 @@ def find_transitions(results: Iterable[Dict[str, Any]], old: Dict[str, Any]) -> 
     transitions = []
     for result in results:
         previous = old.get(result["id"], {})
-        stock_transition = result["status"] == "available" and previous.get("status") != "available"
-        current_posts = {post["id"] for post in result.get("posts", [])}
-        previous_posts = {post["id"] for post in previous.get("posts", [])}
-        twitter_transition = bool(current_posts - previous_posts)
+        previous_status = previous.get("status")
+        source_has_baseline = bool(previous) and previous_status not in (
+            _NON_PERSISTENT_STATUSES | {_UNOBSERVED_STATUS}
+        )
+        stock_transition = (
+            source_has_baseline
+            and result["status"] == "available"
+            and previous_status != "available"
+        )
+        current_posts = set(_post_ids(result.get("posts")))
+        previous_posts = set(_known_post_ids(previous))
+        social_transition = source_has_baseline and bool(current_posts - previous_posts)
         if stock_transition:
             event = dict(result)
             transitions.append(event)
-        elif twitter_transition:
+        elif social_transition:
             event = dict(result)
             event["event"] = "social_lead"
             event["new_post_ids"] = sorted(current_posts - previous_posts)
@@ -1980,58 +2459,129 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument("--full", action="store_true", help="include all checked items in stdout")
     parser.add_argument("--timeout", type=int, default=20)
     parser.add_argument("--social-timeout", type=int, default=30)
+    parser.add_argument(
+        "--run-timeout",
+        type=int,
+        default=300,
+        help="overall source-check budget in seconds; 0 disables the deadline",
+    )
     args = parser.parse_args(argv)
 
     if args.monitorability:
         print(json.dumps({"items": monitorability(args.cn2_only, args.all)}, ensure_ascii=False, indent=2), flush=True)
         return 0
 
-    source_iter = select_non_social_providers(args.cn2_only, args.all) if args.no_social else select_sources(args.cn2_only, args.all)
-    results = dedupe_discovery_results(
-        check_provider(provider, args.timeout, args.social_timeout) for provider in source_iter
-    )
     state_file = _state_path(args.state_file)
-    old: Dict[str, Any] = {}
-    if state_file.exists():
-        try:
-            old = json.loads(state_file.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            old = {}
-    old = prune_state_posts(old)
-    transitions = find_transitions(results, old)
-    if args.notify_url and transitions:
-        try:
-            _notify(args.notify_url, transitions, args.timeout)
-        except (OSError, RuntimeError) as exc:
-            print("notification failed: %s" % exc, file=sys.stderr)
-            return 2
     try:
-        state_file.parent.mkdir(parents=True, exist_ok=True)
-        state_file.write_text(json.dumps({x["id"]: x for x in results}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    except OSError as exc:
-        print("state write failed: %s" % exc, file=sys.stderr)
+        loaded_state, state_exists = _read_state(state_file)
+    except RuntimeError as exc:
+        print("state read failed: %s" % exc, file=sys.stderr)
         return 2
+    pending_path = _pending_notification_path(state_file)
+    if args.notify_url and pending_path.exists():
+        try:
+            pending = json.loads(pending_path.read_text(encoding="utf-8"))
+            if not isinstance(pending, dict) or not isinstance(pending.get("items"), list):
+                raise ValueError("invalid pending notification")
+            _notify(
+                args.notify_url,
+                pending["items"],
+                args.timeout,
+                str(pending.get("event_id", "")),
+            )
+            pending_path.unlink()
+        except (OSError, RuntimeError, ValueError) as exc:
+            print("pending notification failed: %s" % exc, file=sys.stderr)
+            return 2
+
+    source_iter = (
+        select_non_social_providers(args.cn2_only, args.all)
+        if args.no_social
+        else select_sources(args.cn2_only, args.all)
+    )
+    check_started_at = time.monotonic()
+    results = dedupe_discovery_results(
+        run_checks(
+            source_iter,
+            args.timeout,
+            args.social_timeout,
+            args.run_timeout,
+        )
+    )
+    old = prune_state_posts(loaded_state)
+    baseline_created = not state_exists or not old
+    transitions = [] if baseline_created else find_transitions(results, old)
+    exceptions = [
+        {
+            "id": result["id"],
+            "provider": result["provider"],
+            "status": result["status"],
+            "reason": result.get("reason", ""),
+        }
+        for result in results
+        if result.get("status") in _EXCEPTION_STATUSES
+    ]
     output = {
         "checked_at": int(time.time()),
+        "duration_seconds": round(time.monotonic() - check_started_at, 3),
+        "run_status": "degraded" if exceptions else "complete",
+        "baseline_created": baseline_created,
         "transitions": transitions,
-        "exceptions": [
-            {
-                "id": result["id"],
-                "provider": result["provider"],
-                "status": result["status"],
-                "reason": result.get("reason", ""),
-            }
-            for result in results
-            if result.get("status") in {"blocked", "unreachable", "unknown"}
-        ],
+        "exceptions": exceptions,
     }
     if args.full:
         output["items"] = results
+
+    pending_record = (
+        _notification_record(transitions)
+        if args.notify_url and transitions
+        else None
+    )
+    saved_state = merge_state(old, results)
+    try:
+        state_file.parent.mkdir(parents=True, exist_ok=True)
+        if pending_record is not None:
+            _atomic_write_text(
+                pending_path,
+                json.dumps(pending_record, ensure_ascii=False, indent=2) + "\n",
+            )
+        if state_exists:
+            _atomic_write_text(
+                _previous_state_path(state_file),
+                json.dumps(loaded_state, ensure_ascii=False, indent=2) + "\n",
+            )
+        _atomic_write_text(
+            _last_run_path(state_file),
+            json.dumps(output, ensure_ascii=False, indent=2) + "\n",
+        )
+        _atomic_write_text(
+            state_file,
+            json.dumps(saved_state, ensure_ascii=False, indent=2) + "\n",
+        )
+    except OSError as exc:
+        if pending_record is not None:
+            pending_path.unlink(missing_ok=True)
+        print("state artifact write failed: %s" % exc, file=sys.stderr)
+        return 2
+
+    if args.notify_url and pending_record is not None:
+        try:
+            _notify(
+                args.notify_url,
+                transitions,
+                args.timeout,
+                pending_record["event_id"],
+            )
+            pending_path.unlink()
+        except (OSError, RuntimeError) as exc:
+            print("notification failed: %s" % exc, file=sys.stderr)
+            return 2
     print(json.dumps(output, ensure_ascii=False, separators=(",", ":")), flush=True)
     _append_memory_line(
-        "%s: check complete; transitions=%d; exceptions=%d; discovery_leads=%d"
+        "%s: check %s; transitions=%d; exceptions=%d; discovery_leads=%d"
         % (
             date.today().isoformat(),
+            output["run_status"],
             len(transitions),
             len(output["exceptions"]),
             sum(len(result.get("posts", [])) for result in results if str(result.get("id", "")).startswith("vps-discovery-")),
