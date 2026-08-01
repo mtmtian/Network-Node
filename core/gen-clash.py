@@ -400,6 +400,48 @@ proxy-groups:
       - DIRECT
 
 rule-providers:
+  # --- 本地静态 AI / Claude 锚点：不依赖远程规则集刷新 ---
+  ai-static:
+    type: inline
+    behavior: classical
+    payload:
+      - DOMAIN-KEYWORD,stun
+      - DOMAIN-SUFFIX,anthropic.com
+      - DOMAIN-SUFFIX,clau.de
+      - DOMAIN-SUFFIX,claude.ai
+      - DOMAIN-SUFFIX,claude.com
+      - DOMAIN-SUFFIX,claudemcpclient.com
+      - DOMAIN-SUFFIX,claudemcpcontent.com
+      - DOMAIN-SUFFIX,claudeusercontent.com
+      - DOMAIN,servd-anthropic-website.b-cdn.net
+      - DOMAIN,anthropic.com.cdn.cloudflare.net
+      - DOMAIN,anthropic.auth0.com
+      - DOMAIN,anthropic-com.ghost.io
+      - DOMAIN-SUFFIX,sentry.io
+      - DOMAIN-SUFFIX,statsigapi.net
+      - DOMAIN,browser-intake-us5-datadoghq.com
+      - DOMAIN-KEYWORD,datadog
+      - DOMAIN-KEYWORD,sentry
+      - DOMAIN-KEYWORD,sift
+      - DOMAIN-SUFFIX,intercom.io
+      - DOMAIN-SUFFIX,intercomcdn.com
+      - DOMAIN,cdn.usefathom.com
+      - IP-CIDR,160.79.104.0/21,no-resolve
+      - IP-CIDR6,2607:6bc0::/32,no-resolve
+      - IP-ASN,399358,no-resolve
+      - GEOSITE,category-ntp
+      - DST-PORT,123
+      - DOMAIN-SUFFIX,openai.com
+      - DOMAIN-SUFFIX,chatgpt.com
+      - DOMAIN-SUFFIX,oaistatic.com
+      - DOMAIN-SUFFIX,oaiusercontent.com
+      - DOMAIN-SUFFIX,gemini.google.com
+      - DOMAIN-SUFFIX,aistudio.google.com
+      - DOMAIN-SUFFIX,generativelanguage.googleapis.com
+      - DOMAIN-SUFFIX,notebooklm.google.com
+      - DOMAIN-SUFFIX,perplexity.ai
+      - DOMAIN-SUFFIX,cursor.com
+
   # --- MetaCubeX: AI / Google ---
   ai:
     type: http
@@ -523,46 +565,8 @@ rules:
   - DOMAIN-SUFFIX,raw.githubusercontent.com,🌐 代理流量
 
   # --- [P1] Claude / Anthropic 及其依赖固定到同一个 IPv4 Xray 出口 ---
-  # 静态锚点必须早于动态 AI、广告拦截和所有直连规则，避免规则集刷新失败或
-  # 第三方遥测被误判为广告后出现出口漂移。IP 规则是域名匹配失效时的兜底。
-  - DOMAIN-KEYWORD,stun,🤖 AI 隐私出口
-  - DOMAIN-SUFFIX,anthropic.com,🤖 AI 隐私出口
-  - DOMAIN-SUFFIX,clau.de,🤖 AI 隐私出口
-  - DOMAIN-SUFFIX,claude.ai,🤖 AI 隐私出口
-  - DOMAIN-SUFFIX,claude.com,🤖 AI 隐私出口
-  - DOMAIN-SUFFIX,claudemcpclient.com,🤖 AI 隐私出口
-  - DOMAIN-SUFFIX,claudemcpcontent.com,🤖 AI 隐私出口
-  - DOMAIN-SUFFIX,claudeusercontent.com,🤖 AI 隐私出口
-  - DOMAIN,servd-anthropic-website.b-cdn.net,🤖 AI 隐私出口
-  - DOMAIN,anthropic.com.cdn.cloudflare.net,🤖 AI 隐私出口
-  - DOMAIN,anthropic.auth0.com,🤖 AI 隐私出口
-  - DOMAIN,anthropic-com.ghost.io,🤖 AI 隐私出口
-  - DOMAIN-SUFFIX,sentry.io,🤖 AI 隐私出口
-  - DOMAIN-SUFFIX,statsigapi.net,🤖 AI 隐私出口
-  - DOMAIN,browser-intake-us5-datadoghq.com,🤖 AI 隐私出口
-  - DOMAIN-KEYWORD,datadog,🤖 AI 隐私出口
-  - DOMAIN-KEYWORD,sentry,🤖 AI 隐私出口
-  - DOMAIN-KEYWORD,sift,🤖 AI 隐私出口
-  - DOMAIN-SUFFIX,intercom.io,🤖 AI 隐私出口
-  - DOMAIN-SUFFIX,intercomcdn.com,🤖 AI 隐私出口
-  - DOMAIN,cdn.usefathom.com,🤖 AI 隐私出口
-  - IP-CIDR,160.79.104.0/21,🤖 AI 隐私出口,no-resolve
-  - IP-CIDR6,2607:6bc0::/32,🤖 AI 隐私出口,no-resolve
-  - IP-ASN,399358,🤖 AI 隐私出口,no-resolve
-  - GEOSITE,category-ntp,🤖 AI 隐私出口
-  - DST-PORT,123,🤖 AI 隐私出口
-
-  # 其他常用 AI 静态锚点，和 Claude 规则保持同一高优先级区块。
-  - DOMAIN-SUFFIX,openai.com,🤖 AI 隐私出口
-  - DOMAIN-SUFFIX,chatgpt.com,🤖 AI 隐私出口
-  - DOMAIN-SUFFIX,oaistatic.com,🤖 AI 隐私出口
-  - DOMAIN-SUFFIX,oaiusercontent.com,🤖 AI 隐私出口
-  - DOMAIN-SUFFIX,gemini.google.com,🤖 AI 隐私出口
-  - DOMAIN-SUFFIX,aistudio.google.com,🤖 AI 隐私出口
-  - DOMAIN-SUFFIX,generativelanguage.googleapis.com,🤖 AI 隐私出口
-  - DOMAIN-SUFFIX,notebooklm.google.com,🤖 AI 隐私出口
-  - DOMAIN-SUFFIX,perplexity.ai,🤖 AI 隐私出口
-  - DOMAIN-SUFFIX,cursor.com,🤖 AI 隐私出口
+  # 规则内容集中在本地 inline provider 中，单条 RULE-SET 仍高于动态 AI、广告拦截和直连。
+  - RULE-SET,ai-static,🤖 AI 隐私出口
   - RULE-SET,ai,🤖 AI 隐私出口
   - RULE-SET,google,🌐 代理流量
 

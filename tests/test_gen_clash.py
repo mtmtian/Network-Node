@@ -103,56 +103,54 @@ class GenerateClashConfigTest(unittest.TestCase):
             ai_group = mac.split('name: "🤖 AI 隐私出口"', 1)[1].split(
                 'name: "🛟 自动故障切换"', 1
             )[0]
+            static_provider = mac.split("  ai-static:\n", 1)[1].split(
+                "\n\n  # --- MetaCubeX: AI / Google ---", 1
+            )[0]
             rules = mac.split("rules:\n", 1)[1]
+            ai_static_rule = "  - RULE-SET,ai-static,🤖 AI 隐私出口"
             ai_rule = rules.index("  - RULE-SET,ai,🤖 AI 隐私出口")
-            for domain in (
-                "anthropic.com",
-                "clau.de",
-                "claude.ai",
-                "claude.com",
-                "claudemcpclient.com",
-                "claudemcpcontent.com",
-                "claudeusercontent.com",
-                "sentry.io",
-                "statsigapi.net",
-                "intercom.io",
-                "intercomcdn.com",
-                "openai.com",
-                "chatgpt.com",
-                "oaistatic.com",
-                "oaiusercontent.com",
-                "gemini.google.com",
-                "aistudio.google.com",
-                "generativelanguage.googleapis.com",
-                "notebooklm.google.com",
-                "perplexity.ai",
-                "cursor.com",
-            ):
-                self.assertIn(
-                    f"  - DOMAIN-SUFFIX,{domain},🤖 AI 隐私出口", rules
-                )
-                self.assertLess(
-                    rules.index(f"  - DOMAIN-SUFFIX,{domain},🤖 AI 隐私出口"),
-                    ai_rule,
-                )
-            for rule in (
-                "  - DOMAIN,servd-anthropic-website.b-cdn.net,🤖 AI 隐私出口",
-                "  - DOMAIN,anthropic.com.cdn.cloudflare.net,🤖 AI 隐私出口",
-                "  - DOMAIN,anthropic.auth0.com,🤖 AI 隐私出口",
-                "  - DOMAIN,anthropic-com.ghost.io,🤖 AI 隐私出口",
-                "  - DOMAIN,browser-intake-us5-datadoghq.com,🤖 AI 隐私出口",
-                "  - DOMAIN,cdn.usefathom.com,🤖 AI 隐私出口",
-                "  - DOMAIN-KEYWORD,datadog,🤖 AI 隐私出口",
-                "  - DOMAIN-KEYWORD,sentry,🤖 AI 隐私出口",
-                "  - DOMAIN-KEYWORD,sift,🤖 AI 隐私出口",
-                "  - IP-CIDR,160.79.104.0/21,🤖 AI 隐私出口,no-resolve",
-                "  - IP-CIDR6,2607:6bc0::/32,🤖 AI 隐私出口,no-resolve",
-                "  - IP-ASN,399358,🤖 AI 隐私出口,no-resolve",
-                "  - GEOSITE,category-ntp,🤖 AI 隐私出口",
-                "  - DST-PORT,123,🤖 AI 隐私出口",
-            ):
-                self.assertIn(rule, rules)
-                self.assertLess(rules.index(rule), ai_rule)
+            static_payload = (
+                "DOMAIN-KEYWORD,stun",
+                "DOMAIN-SUFFIX,anthropic.com",
+                "DOMAIN-SUFFIX,clau.de",
+                "DOMAIN-SUFFIX,claude.ai",
+                "DOMAIN-SUFFIX,claude.com",
+                "DOMAIN-SUFFIX,claudemcpclient.com",
+                "DOMAIN-SUFFIX,claudemcpcontent.com",
+                "DOMAIN-SUFFIX,claudeusercontent.com",
+                "DOMAIN,servd-anthropic-website.b-cdn.net",
+                "DOMAIN,anthropic.com.cdn.cloudflare.net",
+                "DOMAIN,anthropic.auth0.com",
+                "DOMAIN,anthropic-com.ghost.io",
+                "DOMAIN-SUFFIX,sentry.io",
+                "DOMAIN-SUFFIX,statsigapi.net",
+                "DOMAIN,browser-intake-us5-datadoghq.com",
+                "DOMAIN-KEYWORD,datadog",
+                "DOMAIN-KEYWORD,sentry",
+                "DOMAIN-KEYWORD,sift",
+                "DOMAIN-SUFFIX,intercom.io",
+                "DOMAIN-SUFFIX,intercomcdn.com",
+                "DOMAIN,cdn.usefathom.com",
+                "IP-CIDR,160.79.104.0/21,no-resolve",
+                "IP-CIDR6,2607:6bc0::/32,no-resolve",
+                "IP-ASN,399358,no-resolve",
+                "GEOSITE,category-ntp",
+                "DST-PORT,123",
+                "DOMAIN-SUFFIX,openai.com",
+                "DOMAIN-SUFFIX,chatgpt.com",
+                "DOMAIN-SUFFIX,oaistatic.com",
+                "DOMAIN-SUFFIX,oaiusercontent.com",
+                "DOMAIN-SUFFIX,gemini.google.com",
+                "DOMAIN-SUFFIX,aistudio.google.com",
+                "DOMAIN-SUFFIX,generativelanguage.googleapis.com",
+                "DOMAIN-SUFFIX,notebooklm.google.com",
+                "DOMAIN-SUFFIX,perplexity.ai",
+                "DOMAIN-SUFFIX,cursor.com",
+            )
+            self.assertEqual(static_provider.count("      - "), len(static_payload))
+            for payload in static_payload:
+                self.assertIn(f"      - {payload}", static_provider)
+            self.assertLess(rules.index(ai_static_rule), ai_rule)
             for boundary in (
                 "  - RULE-SET,ads-lite,🛑 屏蔽流量",
                 "  - RULE-SET,icloud,↪️ 直连流量",
@@ -164,19 +162,12 @@ class GenerateClashConfigTest(unittest.TestCase):
                 "  - GEOIP,CN,🇨🇳 国内流量,no-resolve",
             ):
                 boundary_index = rules.index(boundary)
-                for rule in (
-                    "  - DOMAIN,anthropic.auth0.com,🤖 AI 隐私出口",
-                    "  - DOMAIN-KEYWORD,datadog,🤖 AI 隐私出口",
-                    "  - IP-CIDR,160.79.104.0/21,🤖 AI 隐私出口,no-resolve",
-                    "  - GEOSITE,category-ntp,🤖 AI 隐私出口",
-                    "  - DST-PORT,123,🤖 AI 隐私出口",
-                ):
-                    self.assertLess(rules.index(rule), boundary_index)
+                self.assertLess(rules.index(ai_static_rule), boundary_index)
             self.assertIn("    type: fallback", ai_group)
             self.assertIn('      - "US-Reality"', ai_group)
             self.assertNotIn('      - "US-HY2"', ai_group)
             self.assertIn("  - RULE-SET,ai,🤖 AI 隐私出口", mac)
-            self.assertIn("  - DOMAIN-KEYWORD,stun,🤖 AI 隐私出口", mac)
+            self.assertIn("      - DOMAIN-KEYWORD,stun", static_provider)
             cn_group = mac.split('name: "🇨🇳 国内流量"', 1)[1].split(
                 'name: "🛑 屏蔽流量"', 1
             )[0]
@@ -208,7 +199,7 @@ class GenerateClashConfigTest(unittest.TestCase):
             self.assertIn("  - GEOIP,CN,🇨🇳 国内流量,no-resolve", split_config)
             self.assertIn("https://223.5.5.5/dns-query", split_config)
             self.assertIn("https://120.53.53.53/dns-query", split_config)
-            self.assertIn("  - DOMAIN-KEYWORD,stun,🤖 AI 隐私出口", split_config)
+            self.assertIn("      - DOMAIN-KEYWORD,stun", split_config)
             self.assertIn("  - MATCH,🎯 兜底策略", split_config)
             split_fallback = split_config.split('name: "🎯 兜底策略"', 1)[1].split(
                 "\n\nrule-providers:", 1
