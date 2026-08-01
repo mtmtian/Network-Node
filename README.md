@@ -127,7 +127,7 @@ GCP 和 VPS 真正变化的只有服务器生命周期、连接方式与防火�
 
 普通流量默认使用 `🛟 自动故障切换`：Reality 正常时行为不变，连接失败时按 Reality → CDN → Hysteria2 → AnyTLS 顺序切换。AI 域名和 STUN 使用单独的 `🤖 AI 隐私出口`，按 Reality → CDN（启用时）切换；两条入口共用服务端 Xray IPv4 出口，不加入 HY2、AnyTLS 或 WARP。CDN-only 时该组只使用 CDN。
 
-AI 规则来自 MetaCubeX `category-ai-!cn`，并为 Anthropic/Claude、OpenAI/ChatGPT、Gemini/AI Studio、NotebookLM、Perplexity 和 Cursor 的核心专属域名保留静态锚点；规则集首次下载或刷新失败时，这些主链路仍固定走 AI 隐私出口。它不保证覆盖共享登录/CDN 域名、直接连接的 IP，也不包含 DeepSeek、通义、Kimi、豆包等中国 AI 域名；这些流量继续由后续 Google、CN 或兜底规则处理。
+AI 规则来自 MetaCubeX `category-ai-!cn`。生成器把 Anthropic/Claude 的核心域名、认证/CDN、监控与第三方组件、Anthropic IP 段/ASN、NTP 和 STUN 规则作为静态锚点，置于动态 AI、广告拦截及所有直连规则之前；规则集首次下载或刷新失败时，这些流量仍固定走 AI 隐私出口。`IP-ASN` 需要客户端加载 ASN 数据库，NTP 规则需要代理节点支持 UDP（当前节点均开启 UDP）。DeepSeek、通义、Kimi、豆包等中国 AI 域名不在此静态集合内，继续由后续 CN 或兜底规则处理。
 
 `US-Reality-WARP` 仅保留为手动可选节点，不进入自动测速或自动故障切换，避免自动选择改变公网出口。
 如需真正隐藏源站 IP，把 `CDN_ENABLE=true` 和 `CDN_ONLY=true` 同时设置；这会关闭直连 Reality/Hysteria2/AnyTLS，保留 Cloudflare WS 入口。

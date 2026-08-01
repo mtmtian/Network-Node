@@ -522,15 +522,37 @@ rules:
   # --- [P0] 规则更新 / GitHub raw 走代理，避免大陆网络下规则集刷新失败 ---
   - DOMAIN-SUFFIX,raw.githubusercontent.com,🌐 代理流量
 
-  # --- [P1] STUN 与 AI 固定到同一个 IPv4 Xray 出口，避免 Web/UDP 出口漂移 ---
+  # --- [P1] Claude / Anthropic 及其依赖固定到同一个 IPv4 Xray 出口 ---
+  # 静态锚点必须早于动态 AI、广告拦截和所有直连规则，避免规则集刷新失败或
+  # 第三方遥测被误判为广告后出现出口漂移。IP 规则是域名匹配失效时的兜底。
   - DOMAIN-KEYWORD,stun,🤖 AI 隐私出口
-  # 核心 AI 静态锚点放在动态规则集前，避免首次下载或刷新失败时漏分流。
   - DOMAIN-SUFFIX,anthropic.com,🤖 AI 隐私出口
+  - DOMAIN-SUFFIX,clau.de,🤖 AI 隐私出口
   - DOMAIN-SUFFIX,claude.ai,🤖 AI 隐私出口
   - DOMAIN-SUFFIX,claude.com,🤖 AI 隐私出口
   - DOMAIN-SUFFIX,claudemcpclient.com,🤖 AI 隐私出口
   - DOMAIN-SUFFIX,claudemcpcontent.com,🤖 AI 隐私出口
   - DOMAIN-SUFFIX,claudeusercontent.com,🤖 AI 隐私出口
+  - DOMAIN,servd-anthropic-website.b-cdn.net,🤖 AI 隐私出口
+  - DOMAIN,anthropic.com.cdn.cloudflare.net,🤖 AI 隐私出口
+  - DOMAIN,anthropic.auth0.com,🤖 AI 隐私出口
+  - DOMAIN,anthropic-com.ghost.io,🤖 AI 隐私出口
+  - DOMAIN-SUFFIX,sentry.io,🤖 AI 隐私出口
+  - DOMAIN-SUFFIX,statsigapi.net,🤖 AI 隐私出口
+  - DOMAIN,browser-intake-us5-datadoghq.com,🤖 AI 隐私出口
+  - DOMAIN-KEYWORD,datadog,🤖 AI 隐私出口
+  - DOMAIN-KEYWORD,sentry,🤖 AI 隐私出口
+  - DOMAIN-KEYWORD,sift,🤖 AI 隐私出口
+  - DOMAIN-SUFFIX,intercom.io,🤖 AI 隐私出口
+  - DOMAIN-SUFFIX,intercomcdn.com,🤖 AI 隐私出口
+  - DOMAIN,cdn.usefathom.com,🤖 AI 隐私出口
+  - IP-CIDR,160.79.104.0/21,🤖 AI 隐私出口,no-resolve
+  - IP-CIDR6,2607:6bc0::/32,🤖 AI 隐私出口,no-resolve
+  - IP-ASN,399358,🤖 AI 隐私出口,no-resolve
+  - GEOSITE,category-ntp,🤖 AI 隐私出口
+  - DST-PORT,123,🤖 AI 隐私出口
+
+  # 其他常用 AI 静态锚点，和 Claude 规则保持同一高优先级区块。
   - DOMAIN-SUFFIX,openai.com,🤖 AI 隐私出口
   - DOMAIN-SUFFIX,chatgpt.com,🤖 AI 隐私出口
   - DOMAIN-SUFFIX,oaistatic.com,🤖 AI 隐私出口

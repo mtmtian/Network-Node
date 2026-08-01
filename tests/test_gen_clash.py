@@ -107,11 +107,16 @@ class GenerateClashConfigTest(unittest.TestCase):
             ai_rule = rules.index("  - RULE-SET,ai,🤖 AI 隐私出口")
             for domain in (
                 "anthropic.com",
+                "clau.de",
                 "claude.ai",
                 "claude.com",
                 "claudemcpclient.com",
                 "claudemcpcontent.com",
                 "claudeusercontent.com",
+                "sentry.io",
+                "statsigapi.net",
+                "intercom.io",
+                "intercomcdn.com",
                 "openai.com",
                 "chatgpt.com",
                 "oaistatic.com",
@@ -130,6 +135,43 @@ class GenerateClashConfigTest(unittest.TestCase):
                     rules.index(f"  - DOMAIN-SUFFIX,{domain},🤖 AI 隐私出口"),
                     ai_rule,
                 )
+            for rule in (
+                "  - DOMAIN,servd-anthropic-website.b-cdn.net,🤖 AI 隐私出口",
+                "  - DOMAIN,anthropic.com.cdn.cloudflare.net,🤖 AI 隐私出口",
+                "  - DOMAIN,anthropic.auth0.com,🤖 AI 隐私出口",
+                "  - DOMAIN,anthropic-com.ghost.io,🤖 AI 隐私出口",
+                "  - DOMAIN,browser-intake-us5-datadoghq.com,🤖 AI 隐私出口",
+                "  - DOMAIN,cdn.usefathom.com,🤖 AI 隐私出口",
+                "  - DOMAIN-KEYWORD,datadog,🤖 AI 隐私出口",
+                "  - DOMAIN-KEYWORD,sentry,🤖 AI 隐私出口",
+                "  - DOMAIN-KEYWORD,sift,🤖 AI 隐私出口",
+                "  - IP-CIDR,160.79.104.0/21,🤖 AI 隐私出口,no-resolve",
+                "  - IP-CIDR6,2607:6bc0::/32,🤖 AI 隐私出口,no-resolve",
+                "  - IP-ASN,399358,🤖 AI 隐私出口,no-resolve",
+                "  - GEOSITE,category-ntp,🤖 AI 隐私出口",
+                "  - DST-PORT,123,🤖 AI 隐私出口",
+            ):
+                self.assertIn(rule, rules)
+                self.assertLess(rules.index(rule), ai_rule)
+            for boundary in (
+                "  - RULE-SET,ads-lite,🛑 屏蔽流量",
+                "  - RULE-SET,icloud,↪️ 直连流量",
+                "  - RULE-SET,apple-cn,↪️ 直连流量",
+                "  - RULE-SET,private,DIRECT",
+                "  - RULE-SET,private-ip,DIRECT,no-resolve",
+                "  - RULE-SET,cn,🇨🇳 国内流量",
+                "  - GEOIP,LAN,DIRECT,no-resolve",
+                "  - GEOIP,CN,🇨🇳 国内流量,no-resolve",
+            ):
+                boundary_index = rules.index(boundary)
+                for rule in (
+                    "  - DOMAIN,anthropic.auth0.com,🤖 AI 隐私出口",
+                    "  - DOMAIN-KEYWORD,datadog,🤖 AI 隐私出口",
+                    "  - IP-CIDR,160.79.104.0/21,🤖 AI 隐私出口,no-resolve",
+                    "  - GEOSITE,category-ntp,🤖 AI 隐私出口",
+                    "  - DST-PORT,123,🤖 AI 隐私出口",
+                ):
+                    self.assertLess(rules.index(rule), boundary_index)
             self.assertIn("    type: fallback", ai_group)
             self.assertIn('      - "US-Reality"', ai_group)
             self.assertNotIn('      - "US-HY2"', ai_group)
