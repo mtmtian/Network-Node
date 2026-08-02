@@ -63,5 +63,3 @@ clash-configs/
 The entire `profiles/` tree is gitignored. This keeps host lifecycle state and credentials separate while both providers continue to consume the same protocol installer and routing-rule template.
 
 Each profile owns its state and optional host credentials. Generated client YAML is centralized in `clash-configs/` and the generator removes only files prefixed with the active profile name, so running one adapter cannot overwrite another adapter's outputs. The VPS entry point rejects missing or unsafe profile names to prevent accidental cross-provider writes.
-
-The stock monitor under `tools/` is a separate read-only utility. It uses official inventory pages and recent social leads, stores its deduplication state outside the repository, and never logs into a provider account.

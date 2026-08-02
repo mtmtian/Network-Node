@@ -9,7 +9,6 @@
 - 共享核心负责协议、密钥、服务端配置、Cloudflare 可选出口和 Mihomo YAML 生成。
 - provider 只负责服务器生命周期、连接方式和防火墙。
 - profile 负责把某一台服务器的地址、密钥、SSH 私钥和客户端状态隔离开。
-- `tools/vps_stock.py` 是独立的只读库存监控工具，不参与代理部署。
 
 ## 目录职责
 
@@ -21,9 +20,8 @@ providers/                     GCP / 通用 VPS 生命周期适配器
 config/                        不含密钥的默认配置模板
 profiles/<profile>/            本地敏感状态，不提交
 clash-configs/                 生成的客户端 YAML，不提交
-tests/                         部署、生成器、下载和库存监控测试
+tests/                         部署、生成器、下载和 Mihomo 集成测试
 docs/                          架构、排障和运维说明
-tools/vps_stock.py             只读 VPS 库存检查
 ```
 
 ### `core/` 内部边界
@@ -177,7 +175,3 @@ git ls-files profiles
 最后一条必须没有输出。生成的 profile、SSH 私钥、`.secrets.env` 和客户端 YAML 都不应进入提交。
 
 交接说明至少应记录：当前分支和提交、已验证的测试/语法检查、主动维护的 profile 名称，以及未同步的本地敏感状态；不要在交接文本中粘贴节点密码、UUID、Token、私钥或客户端 YAML 内容。
-
-## Graphify 结构审计摘要
-
-Graphify 对仓库代码进行结构提取后，识别出部署核心、provider 适配器、客户端生成器和独立库存监控四个主要边界；未发现 import cycle。库存监控中的解析器和社交来源测试连接较密集，但不影响代理部署链路，因此不应把它们与 `core/` 合并重构。

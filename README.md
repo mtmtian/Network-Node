@@ -62,7 +62,6 @@ providers/                      GCP、普通 VPS adapter
 core/                           共享部署流水线、密钥、协议安装、规则与 YAML 生成
 config/                         不含密钥的配置模板
 docs/                           架构说明与排障文档
-tools/vps_stock.py              只读 VPS 库存监控
 profiles/<profile>/             每台服务器独立状态与 ssh/（不提交）
 clash-configs/                  所有 profile 的客户端 YAML（不提交）
 ```
@@ -70,6 +69,9 @@ clash-configs/                  所有 profile 的客户端 YAML（不提交）
 GCP 和 VPS 真正变化的只有服务器生命周期、连接方式与防火墙；协议和客户端规则只维护一份。详细 seam 和 provider interface 见 [架构说明](docs/architecture.md)。
 
 想快速理解整个仓库，先看[仓库总览与维护说明](docs/repository-guide.md)；它把入口、部署链路、profile、直连/CDN 节点和日常操作放在一处。
+
+独立的 VPS 库存监控已迁至
+[`vps-stock-opencli`](https://github.com/mtmtian/vps-stock-opencli)，不再属于本仓库的代码或测试边界。
 
 ## 配置
 
@@ -173,17 +175,6 @@ Cloudflare 权限不足时，部署会在修改服务器前停止，不会留下
 - GCP 旧命令 `./deploy.sh` 仍可使用，但会提示改用 `./deploy-gcp.sh`。
 - 通用排障见 [Troubleshooting](docs/troubleshooting.md)。
 - 新服务器接入和隔离规则见 [Provider Onboarding](docs/provider-onboarding.md)。
-- VPS 库存监控见 [VPS Stock Monitor](docs/vps-stock-monitor.md)。
-
-## VPS 库存监控
-
-从仓库根目录运行只读检查：
-
-```bash
-python3 tools/vps_stock.py --state-file ~/.cache/network-node/vps-stock.json
-```
-
-库存状态放在仓库外，不会进入 Git；监控不会登录、下单或修改任何供应商账户。
 
 ## English
 
