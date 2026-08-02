@@ -450,6 +450,7 @@ rule-providers:
     url: "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite/category-ai-%21cn.mrs"
     path: ./ruleset/meta_ai.mrs
     interval: 86400
+    proxy: "🛟 自动故障切换"
 
   google:
     type: http
@@ -458,6 +459,7 @@ rule-providers:
     url: "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite/google.mrs"
     path: ./ruleset/meta_google.mrs
     interval: 86400
+    proxy: "🛟 自动故障切换"
 
   # --- blackmatrix7: iOS / Apple 功能补丁 ---
   siri:
@@ -467,6 +469,7 @@ rule-providers:
     url: "https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/Siri/Siri.yaml"
     path: ./ruleset/bm7_siri.yaml
     interval: 86400
+    proxy: "🛟 自动故障切换"
 
   icloud-private-relay:
     type: http
@@ -475,6 +478,7 @@ rule-providers:
     url: "https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/iCloudPrivateRelay/iCloudPrivateRelay.yaml"
     path: ./ruleset/bm7_icloud_private_relay.yaml
     interval: 86400
+    proxy: "🛟 自动故障切换"
 
   # --- MetaCubeX: Apple 基础直连 ---
   icloud:
@@ -484,6 +488,7 @@ rule-providers:
     url: "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite/icloud.mrs"
     path: ./ruleset/meta_icloud.mrs
     interval: 86400
+    proxy: "🛟 自动故障切换"
 
   apple-cn:
     type: http
@@ -492,6 +497,7 @@ rule-providers:
     url: "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite/apple-cn.mrs"
     path: ./ruleset/meta_apple_cn.mrs
     interval: 86400
+    proxy: "🛟 自动故障切换"
 
   # --- blackmatrix7: 轻量广告拦截 ---
   ads-lite:
@@ -501,6 +507,7 @@ rule-providers:
     url: "https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/AdvertisingLite/AdvertisingLite.yaml"
     path: ./ruleset/bm7_ads_lite.yaml
     interval: 86400
+    proxy: "🛟 自动故障切换"
 
   # --- MetaCubeX: 国内直连 ---
   private:
@@ -510,6 +517,7 @@ rule-providers:
     url: "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite/private.mrs"
     path: ./ruleset/meta_private.mrs
     interval: 86400
+    proxy: "🛟 自动故障切换"
 
   private-ip:
     type: http
@@ -518,6 +526,7 @@ rule-providers:
     url: "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geoip/private.mrs"
     path: ./ruleset/meta_private_ip.mrs
     interval: 86400
+    proxy: "🛟 自动故障切换"
 
   cn:
     type: http
@@ -526,6 +535,7 @@ rule-providers:
     url: "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite/cn.mrs"
     path: ./ruleset/meta_cn.mrs
     interval: 86400
+    proxy: "🛟 自动故障切换"
 
   cn-ip:
     type: http
@@ -534,6 +544,7 @@ rule-providers:
     url: "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geoip/cn.mrs"
     path: ./ruleset/meta_cn_ip.mrs
     interval: 86400
+    proxy: "🛟 自动故障切换"
 
   # --- MetaCubeX: 通讯 / 海外服务 ---
   telegram:
@@ -543,6 +554,7 @@ rule-providers:
     url: "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite/telegram.mrs"
     path: ./ruleset/meta_telegram.mrs
     interval: 86400
+    proxy: "🛟 自动故障切换"
 
   telegram-ip:
     type: http
@@ -551,6 +563,7 @@ rule-providers:
     url: "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geoip/telegram.mrs"
     path: ./ruleset/meta_telegram_ip.mrs
     interval: 86400
+    proxy: "🛟 自动故障切换"
 
   tiktok:
     type: http
@@ -559,6 +572,7 @@ rule-providers:
     url: "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite/tiktok.mrs"
     path: ./ruleset/meta_tiktok.mrs
     interval: 86400
+    proxy: "🛟 自动故障切换"
 
 rules:
   # --- [P0] 规则更新 / GitHub raw 走代理，避免大陆网络下规则集刷新失败 ---

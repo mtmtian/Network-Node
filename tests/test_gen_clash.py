@@ -179,6 +179,17 @@ class GenerateClashConfigTest(unittest.TestCase):
             self.assertIn("  - RULE-SET,cn,🇨🇳 国内流量", mac)
             self.assertIn("  - RULE-SET,cn-ip,🇨🇳 国内流量,no-resolve", mac)
             self.assertIn("  - GEOIP,CN,🇨🇳 国内流量,no-resolve", mac)
+            providers = mac.split("rule-providers:\n", 1)[1].split("\nrules:\n", 1)[0]
+            self.assertEqual(
+                providers.count('proxy: "🛟 自动故障切换"'),
+                14,
+            )
+            self.assertIn(
+                'url: "https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/'
+                'master/rule/Clash/iCloudPrivateRelay/iCloudPrivateRelay.yaml"',
+                providers,
+            )
+            self.assertNotIn("rules.kr328.app", providers)
 
             with (root / "deploy.conf").open("a") as conf:
                 conf.write("PRIVACY_MODE=false\n")
