@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate Clash.Meta / Mihomo YAML configs, one per device.
+"""Generate Stash-first, Mihomo-compatible YAML configs, one per device.
 
 Reads deploy.conf (DEVICES, REALITY_PORT, REALITY_SNI, PROJECT_ID, REGION) and
 .secrets.env (STATIC_IP, REALITY_PUBLIC, REALITY_SHORTID, HY2_PORT,
@@ -7,7 +7,7 @@ ANYTLS_PORT, ANYTLS_PASS, and per-device REALITY_UUID_<dev> / HY2_PASS_<dev>).
 
 Each device gets its OWN Reality UUID and Hysteria2 password so a single device
 can be revoked without affecting the others. Primary node is VLESS+Reality;
-Hysteria2 and AnyTLS are fallback options for compatible Mihomo clients.
+Hysteria2 and AnyTLS are fallback options for compatible Stash/Mihomo clients.
 """
 import pathlib
 import os
@@ -230,7 +230,7 @@ def direct_proxy_blocks(dev_uuid, hy2_password):
 '''
     return reality, hy2, anytls
 
-TEMPLATE = """# Clash.Meta / Mihomo config — device: {DEVICE}
+TEMPLATE = """# Stash-first / Mihomo-compatible config — device: {DEVICE}
 # Server: {SERVER_LABEL}
 
 mixed-port: 7890
@@ -400,48 +400,6 @@ proxy-groups:
       - DIRECT
 
 rule-providers:
-  # --- 本地静态 AI / Claude 锚点：不依赖远程规则集刷新 ---
-  ai-static:
-    type: inline
-    behavior: classical
-    payload:
-      - DOMAIN-KEYWORD,stun
-      - DOMAIN-SUFFIX,anthropic.com
-      - DOMAIN-SUFFIX,clau.de
-      - DOMAIN-SUFFIX,claude.ai
-      - DOMAIN-SUFFIX,claude.com
-      - DOMAIN-SUFFIX,claudemcpclient.com
-      - DOMAIN-SUFFIX,claudemcpcontent.com
-      - DOMAIN-SUFFIX,claudeusercontent.com
-      - DOMAIN,servd-anthropic-website.b-cdn.net
-      - DOMAIN,anthropic.com.cdn.cloudflare.net
-      - DOMAIN,anthropic.auth0.com
-      - DOMAIN,anthropic-com.ghost.io
-      - DOMAIN-SUFFIX,sentry.io
-      - DOMAIN-SUFFIX,statsigapi.net
-      - DOMAIN,browser-intake-us5-datadoghq.com
-      - DOMAIN-KEYWORD,datadog
-      - DOMAIN-KEYWORD,sentry
-      - DOMAIN-KEYWORD,sift
-      - DOMAIN-SUFFIX,intercom.io
-      - DOMAIN-SUFFIX,intercomcdn.com
-      - DOMAIN,cdn.usefathom.com
-      - IP-CIDR,160.79.104.0/21,no-resolve
-      - IP-CIDR6,2607:6bc0::/32,no-resolve
-      - IP-ASN,399358,no-resolve
-      - GEOSITE,category-ntp
-      - DST-PORT,123
-      - DOMAIN-SUFFIX,openai.com
-      - DOMAIN-SUFFIX,chatgpt.com
-      - DOMAIN-SUFFIX,oaistatic.com
-      - DOMAIN-SUFFIX,oaiusercontent.com
-      - DOMAIN-SUFFIX,gemini.google.com
-      - DOMAIN-SUFFIX,aistudio.google.com
-      - DOMAIN-SUFFIX,generativelanguage.googleapis.com
-      - DOMAIN-SUFFIX,notebooklm.google.com
-      - DOMAIN-SUFFIX,perplexity.ai
-      - DOMAIN-SUFFIX,cursor.com
-
   # --- MetaCubeX: AI / Google ---
   ai:
     type: http
@@ -450,7 +408,6 @@ rule-providers:
     url: "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite/category-ai-%21cn.mrs"
     path: ./ruleset/meta_ai.mrs
     interval: 86400
-    proxy: "🛟 自动故障切换"
 
   google:
     type: http
@@ -459,7 +416,6 @@ rule-providers:
     url: "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite/google.mrs"
     path: ./ruleset/meta_google.mrs
     interval: 86400
-    proxy: "🛟 自动故障切换"
 
   # --- blackmatrix7: iOS / Apple 功能补丁 ---
   siri:
@@ -469,7 +425,6 @@ rule-providers:
     url: "https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/Siri/Siri.yaml"
     path: ./ruleset/bm7_siri.yaml
     interval: 86400
-    proxy: "🛟 自动故障切换"
 
   icloud-private-relay:
     type: http
@@ -478,7 +433,6 @@ rule-providers:
     url: "https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/iCloudPrivateRelay/iCloudPrivateRelay.yaml"
     path: ./ruleset/bm7_icloud_private_relay.yaml
     interval: 86400
-    proxy: "🛟 自动故障切换"
 
   # --- MetaCubeX: Apple 基础直连 ---
   icloud:
@@ -488,7 +442,6 @@ rule-providers:
     url: "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite/icloud.mrs"
     path: ./ruleset/meta_icloud.mrs
     interval: 86400
-    proxy: "🛟 自动故障切换"
 
   apple-cn:
     type: http
@@ -497,7 +450,6 @@ rule-providers:
     url: "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite/apple-cn.mrs"
     path: ./ruleset/meta_apple_cn.mrs
     interval: 86400
-    proxy: "🛟 自动故障切换"
 
   # --- blackmatrix7: 轻量广告拦截 ---
   ads-lite:
@@ -507,7 +459,6 @@ rule-providers:
     url: "https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/AdvertisingLite/AdvertisingLite.yaml"
     path: ./ruleset/bm7_ads_lite.yaml
     interval: 86400
-    proxy: "🛟 自动故障切换"
 
   # --- MetaCubeX: 国内直连 ---
   private:
@@ -517,7 +468,6 @@ rule-providers:
     url: "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite/private.mrs"
     path: ./ruleset/meta_private.mrs
     interval: 86400
-    proxy: "🛟 自动故障切换"
 
   private-ip:
     type: http
@@ -526,7 +476,6 @@ rule-providers:
     url: "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geoip/private.mrs"
     path: ./ruleset/meta_private_ip.mrs
     interval: 86400
-    proxy: "🛟 自动故障切换"
 
   cn:
     type: http
@@ -535,7 +484,6 @@ rule-providers:
     url: "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite/cn.mrs"
     path: ./ruleset/meta_cn.mrs
     interval: 86400
-    proxy: "🛟 自动故障切换"
 
   cn-ip:
     type: http
@@ -544,7 +492,6 @@ rule-providers:
     url: "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geoip/cn.mrs"
     path: ./ruleset/meta_cn_ip.mrs
     interval: 86400
-    proxy: "🛟 自动故障切换"
 
   # --- MetaCubeX: 通讯 / 海外服务 ---
   telegram:
@@ -554,7 +501,6 @@ rule-providers:
     url: "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite/telegram.mrs"
     path: ./ruleset/meta_telegram.mrs
     interval: 86400
-    proxy: "🛟 自动故障切换"
 
   telegram-ip:
     type: http
@@ -563,7 +509,6 @@ rule-providers:
     url: "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geoip/telegram.mrs"
     path: ./ruleset/meta_telegram_ip.mrs
     interval: 86400
-    proxy: "🛟 自动故障切换"
 
   tiktok:
     type: http
@@ -572,15 +517,50 @@ rule-providers:
     url: "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite/tiktok.mrs"
     path: ./ruleset/meta_tiktok.mrs
     interval: 86400
-    proxy: "🛟 自动故障切换"
 
 rules:
   # --- [P0] 规则更新 / GitHub raw 走代理，避免大陆网络下规则集刷新失败 ---
   - DOMAIN-SUFFIX,raw.githubusercontent.com,🌐 代理流量
 
   # --- [P1] Claude / Anthropic 及其依赖固定到同一个 IPv4 Xray 出口 ---
-  # 规则内容集中在本地 inline provider 中，单条 RULE-SET 仍高于动态 AI、广告拦截和直连。
-  - RULE-SET,ai-static,🤖 AI 隐私出口
+  # Stash 不接受 Mihomo 的数组型 inline rule-provider payload；静态锚点直接放在 rules 中。
+  # 这些规则必须早于动态 AI、广告拦截和所有直连规则。
+  - DOMAIN-KEYWORD,stun,🤖 AI 隐私出口
+  - DOMAIN-SUFFIX,anthropic.com,🤖 AI 隐私出口
+  - DOMAIN-SUFFIX,clau.de,🤖 AI 隐私出口
+  - DOMAIN-SUFFIX,claude.ai,🤖 AI 隐私出口
+  - DOMAIN-SUFFIX,claude.com,🤖 AI 隐私出口
+  - DOMAIN-SUFFIX,claudemcpclient.com,🤖 AI 隐私出口
+  - DOMAIN-SUFFIX,claudemcpcontent.com,🤖 AI 隐私出口
+  - DOMAIN-SUFFIX,claudeusercontent.com,🤖 AI 隐私出口
+  - DOMAIN,servd-anthropic-website.b-cdn.net,🤖 AI 隐私出口
+  - DOMAIN,anthropic.com.cdn.cloudflare.net,🤖 AI 隐私出口
+  - DOMAIN,anthropic.auth0.com,🤖 AI 隐私出口
+  - DOMAIN,anthropic-com.ghost.io,🤖 AI 隐私出口
+  - DOMAIN-SUFFIX,sentry.io,🤖 AI 隐私出口
+  - DOMAIN-SUFFIX,statsigapi.net,🤖 AI 隐私出口
+  - DOMAIN,browser-intake-us5-datadoghq.com,🤖 AI 隐私出口
+  - DOMAIN-KEYWORD,datadog,🤖 AI 隐私出口
+  - DOMAIN-KEYWORD,sentry,🤖 AI 隐私出口
+  - DOMAIN-KEYWORD,sift,🤖 AI 隐私出口
+  - DOMAIN-SUFFIX,intercom.io,🤖 AI 隐私出口
+  - DOMAIN-SUFFIX,intercomcdn.com,🤖 AI 隐私出口
+  - DOMAIN,cdn.usefathom.com,🤖 AI 隐私出口
+  - IP-CIDR,160.79.104.0/21,🤖 AI 隐私出口,no-resolve
+  - IP-CIDR6,2607:6bc0::/32,🤖 AI 隐私出口,no-resolve
+  - IP-ASN,399358,🤖 AI 隐私出口,no-resolve
+  - GEOSITE,category-ntp,🤖 AI 隐私出口
+  - DST-PORT,123,🤖 AI 隐私出口
+  - DOMAIN-SUFFIX,openai.com,🤖 AI 隐私出口
+  - DOMAIN-SUFFIX,chatgpt.com,🤖 AI 隐私出口
+  - DOMAIN-SUFFIX,oaistatic.com,🤖 AI 隐私出口
+  - DOMAIN-SUFFIX,oaiusercontent.com,🤖 AI 隐私出口
+  - DOMAIN-SUFFIX,gemini.google.com,🤖 AI 隐私出口
+  - DOMAIN-SUFFIX,aistudio.google.com,🤖 AI 隐私出口
+  - DOMAIN-SUFFIX,generativelanguage.googleapis.com,🤖 AI 隐私出口
+  - DOMAIN-SUFFIX,notebooklm.google.com,🤖 AI 隐私出口
+  - DOMAIN-SUFFIX,perplexity.ai,🤖 AI 隐私出口
+  - DOMAIN-SUFFIX,cursor.com,🤖 AI 隐私出口
   - RULE-SET,ai,🤖 AI 隐私出口
   - RULE-SET,google,🌐 代理流量
 

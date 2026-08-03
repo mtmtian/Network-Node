@@ -5,6 +5,7 @@
 - Keep every provider/server profile isolated under `profiles/<profile>/`; use an explicit `VPS_PROFILE` for every existing VPS.
 - Treat all of `profiles/` as sensitive local state. Never stage, commit, print, or upload its contents.
 - Store generated client YAML in `clash-configs/` with the active profile prefix; keep provider state and optional keys in `profiles/<provider>/`.
+- Treat Stash as the primary client compatibility target. Keep shared YAML within Stash's documented schema; gate Mihomo-only fields behind an explicit client target and regression tests.
 - Store a VPS login key only in `profiles/<provider>/ssh/`; never copy it to the server.
 - iCloud YAML files are distribution copies for device sync, not the project source of truth.
 - Shared protocols and routing rules belong in `core/`; provider lifecycle differences belong in `providers/`.

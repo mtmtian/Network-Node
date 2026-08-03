@@ -118,8 +118,12 @@ GCP 和 VPS 真正变化的只有服务器生命周期、连接方式与防火�
 `dmit-*.yaml` 或 `gcloud-*.yaml`。客户端 YAML 默认权限为 `600`，因为其中含节点地址、UUID 和密码；
 这可阻止同一台电脑上的其他系统用户读取。iCloud 副本用于设备同步，不作为项目源状态。
 
+- Stash（首要兼容目标）：从配置文件页面导入本地或 iCloud YAML
 - Clash Verge：Settings → Profiles → Import
-- 手机：使用支持 Reality、Hysteria2 和 AnyTLS 的 Mihomo/Clash.Meta 兼容客户端
+- 其他客户端：使用支持 Reality、Hysteria2 和 AnyTLS 的 Mihomo/Clash.Meta 兼容客户端
+
+共享 YAML 以 Stash 当前公开配置格式为基线，同时保留 Mihomo 兼容性。不要直接加入 Stash 未支持的
+Mihomo-only 字段，例如数组型 inline rule-provider；确需使用时，应拆分明确的客户端目标并补对应测试。
 
 新生成的配置默认启用 `PRIVACY_MODE=true`，`🇨🇳 国内流量` 默认选择代理，避免检测页面同时观察到国内直连与代理出口；遇到无法使用的 CN 服务时，可在 Stash/Mihomo 里把该组手动切到 `DIRECT`，无需修改 YAML。设置 `PRIVACY_MODE=false` 会让该组首次默认直连，但仍可手动切回代理。局域网地址始终直连，原有 Apple/Spotify 规则保持不变。
 
@@ -129,7 +133,7 @@ GCP 和 VPS 真正变化的只有服务器生命周期、连接方式与防火�
 
 普通流量默认使用 `🛟 自动故障切换`：Reality 正常时行为不变，连接失败时按 Reality → CDN → Hysteria2 → AnyTLS 顺序切换。AI 域名和 STUN 使用单独的 `🤖 AI 隐私出口`，按 Reality → CDN（启用时）切换；两条入口共用服务端 Xray IPv4 出口，不加入 HY2、AnyTLS 或 WARP。CDN-only 时该组只使用 CDN。
 
-AI 规则来自 MetaCubeX `category-ai-!cn`。生成器把 Anthropic/Claude 的核心域名、认证/CDN、监控与第三方组件、Anthropic IP 段/ASN、NTP 和 STUN 规则集中到本地 inline `ai-static` 规则集，置于动态 AI、广告拦截及所有直连规则之前；规则集首次下载或刷新失败时，这些流量仍固定走 AI 隐私出口。`IP-ASN` 需要客户端加载 ASN 数据库，NTP 规则需要代理节点支持 UDP（当前节点均开启 UDP）。DeepSeek、通义、Kimi、豆包等中国 AI 域名不在此静态集合内，继续由后续 CN 或兜底规则处理。
+AI 规则来自 MetaCubeX `category-ai-!cn`。生成器把 Anthropic/Claude 的核心域名、认证/CDN、监控与第三方组件、Anthropic IP 段/ASN、NTP 和 STUN 写成高优先级静态规则，置于动态 AI、广告拦截及所有直连规则之前；远程规则集首次下载或刷新失败时，这些流量仍固定走 AI 隐私出口。`IP-ASN` 需要客户端加载 ASN 数据库，NTP 规则需要代理节点支持 UDP（当前节点均开启 UDP）。DeepSeek、通义、Kimi、豆包等中国 AI 域名不在此静态集合内，继续由后续 CN 或兜底规则处理。
 
 `US-Reality-WARP` 仅保留为手动可选节点，不进入自动测速或自动故障切换，避免自动选择改变公网出口。
 如需真正隐藏源站 IP，把 `CDN_ENABLE=true` 和 `CDN_ONLY=true` 同时设置；这会关闭直连 Reality/Hysteria2/AnyTLS，保留 Cloudflare WS 入口。
@@ -194,7 +198,7 @@ Both entry points run the same shared pipeline:
 2. Generate per-device credentials locally.
 3. Provision or secure a reachable host.
 4. Install BBR, Xray/Reality, Hysteria2, AnyTLS, systemd units, and security updates.
-5. Recover the Reality public key and generate one Mihomo YAML per device.
+5. Recover the Reality public key and generate one Stash-first, Mihomo-compatible YAML per device.
 
 The provider adapters only own host lifecycle, connectivity, and firewall behaviour. Key generation, server configuration, routing rules, optional Cloudflare setup, and client generation remain in `core/`.
 
