@@ -6,7 +6,7 @@
 
 这是一个“共享代理核心 + 多 provider 入口 + 每台服务器独立 profile”的自托管节点部署仓库。
 
-- 共享核心负责协议、密钥、服务端配置、Cloudflare 可选出口和 Mihomo YAML 生成。
+- 共享核心负责协议、密钥、服务端配置、Cloudflare 可选出口和 Stash-first/Mihomo-compatible YAML 生成。
 - provider 只负责服务器生命周期、连接方式和防火墙。
 - profile 负责把某一台服务器的地址、密钥、SSH 私钥和客户端状态隔离开。
 
@@ -20,7 +20,7 @@ providers/                     GCP / 通用 VPS 生命周期适配器
 config/                        不含密钥的默认配置模板
 profiles/<profile>/            本地敏感状态，不提交
 clash-configs/                 生成的客户端 YAML，不提交
-tests/                         部署、生成器、下载和 Mihomo 集成测试
+tests/                         部署、生成器、下载、Stash 兼容断言和 Mihomo 集成测试
 docs/                          架构、排障和运维说明
 ```
 
@@ -34,7 +34,7 @@ docs/                          架构、排障和运维说明
 | `cloudflare.sh` | 创建/复用 Tunnel、配置 Ingress、写入 CNAME 和连接 Token |
 | `setup-server.sh` | 在远端安装 Xray、Hysteria2、AnyTLS、cloudflared 和 systemd 服务 |
 | `download.sh` | 远端二进制下载、重试和超时 |
-| `gen-clash.py` | 每个设备生成一份 Mihomo/Clash YAML |
+| `gen-clash.py` | 每个设备生成一份 Stash-first、Mihomo-compatible YAML |
 
 ## 两条部署路径
 
@@ -97,7 +97,7 @@ US-CDN      → cdn.example.com → Cloudflare → Tunnel → VPS localhost:8080
 - `PRIVACY_MODE=true`（默认）让 `🇨🇳 国内流量` 首次默认走代理；客户端可手动切到 `DIRECT`，`false` 则让该组首次默认直连。直连时，`geosite:cn` 域名使用阿里云 / 腾讯云的加密 DoH，避免明文 DNS 和海外解析造成的 CDN 绕路；国内 DoH 服务商仍能看到查询出口 IP。其他域名继续使用经代理路由的 Cloudflare / Google DoH。局域网与原有 Apple/Spotify 规则不受影响。
 - CN 判定依次使用 MetaCubeX `cn` 域名集、`cn-ip` 地址集和 Mihomo `GEOIP,CN` 兜底；AI、Google、Apple、Telegram、广告等更高优先级规则先匹配，`private`/LAN 则始终固定直连。
 - `🤖 AI 隐私出口` 只使用共享 Xray IPv4 出口，按 Reality → CDN（启用时）故障切换；STUN 同组且不受 `PRIVACY_MODE` 影响，避免 AI HTTP 与 WebRTC UDP 因双栈或 WARP 显示不同地址。
-- AI 域名使用 MetaCubeX `category-ai-!cn`；Anthropic/Claude 的核心域名、认证/CDN、监控与第三方组件、Anthropic IP 段/ASN、NTP 和 STUN 集中在本地 inline `ai-static` 规则集，置于广告拦截及所有直连规则之前。`IP-ASN` 需要客户端加载 ASN 数据库，NTP 需要代理节点支持 UDP；中国 AI 域名仍不在该集合内。
+- AI 域名使用 MetaCubeX `category-ai-!cn`；Anthropic/Claude 的核心域名、认证/CDN、监控与第三方组件、Anthropic IP 段/ASN、NTP 和 STUN 使用高优先级静态规则，置于广告拦截及所有直连规则之前。`IP-ASN` 需要客户端加载 ASN 数据库，NTP 需要代理节点支持 UDP；中国 AI 域名仍不在该集合内。
 
 ## Profile 和文件安全边界
 
@@ -161,6 +161,7 @@ NETWORK_NODE_PROFILE=<profile> python3 core/gen-clash.py
 - 默认参数：改 `config/deploy.conf.example`。
 - 用户操作路径和故障处理：改 `README.md` 或 `docs/`。
 - 新增或修复行为：先补 `tests/`，再改实现。
+- 客户端共享 YAML：优先使用 Stash 已文档化的格式；Mihomo-only 语法必须拆分客户端目标并补回归测试。
 - 不要为了单台服务器的特殊值修改共享核心；放入对应 profile。
 
 ## 发布前检查
