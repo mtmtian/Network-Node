@@ -6,7 +6,7 @@ PROVIDER_DESCRIPTION="provider=VPS"
 provider_init() {
   local profile_key="$SSH_DIR/id_rsa.pem"
   VPS_HOST="${VPS_HOST:-${1:-$(secret_get STATIC_IP)}}"
-  [ -n "$VPS_HOST" ] || die "用法：./deploy-vps.sh <VPS_PUBLIC_IP>"
+  [ -n "$VPS_HOST" ] || die "缺少主机：使用 --host <VPS_PUBLIC_IP> 或位置参数"
   VPS_BOOTSTRAP_USER="${VPS_BOOTSTRAP_USER:-root}"
   VPS_ADMIN_USER="${VPS_ADMIN_USER:-mt}"
   VPS_SSH_PORT="${VPS_SSH_PORT:-22}"
@@ -25,16 +25,92 @@ provider_preflight() {
     command -v "$cmd" >/dev/null 2>&1 || die "缺少命令：$cmd"
   done
   [ -f "$VPS_SSH_KEY" ] || die "找不到 SSH 私钥：$VPS_SSH_KEY"
+  case "$VPS_SSH_PORT" in
+    ""|*[!0-9]*) die "SSH 端口必须是 1-65535 的整数：$VPS_SSH_PORT" ;;
+  esac
+  [ "$VPS_SSH_PORT" -ge 1 ] && [ "$VPS_SSH_PORT" -le 65535 ] \
+    || die "SSH 端口必须是 1-65535 的整数：$VPS_SSH_PORT"
+  case "$VPS_BOOTSTRAP_USER" in
+    ""|[!A-Za-z_]*|*[!A-Za-z0-9_-]*) die "非法 bootstrap 用户名：$VPS_BOOTSTRAP_USER" ;;
+  esac
+  case "$VPS_ADMIN_USER" in
+    ""|[!A-Za-z_]*|*[!A-Za-z0-9_-]*) die "非法管理员用户名：$VPS_ADMIN_USER" ;;
+  esac
+  case "${VPS_INSTALL_KEY:-false}" in
+    true|false) ;;
+    *) die "VPS_INSTALL_KEY 只能是 true/false" ;;
+  esac
+  if [ "${VPS_INSTALL_KEY:-false}" = "true" ]; then
+    command -v ssh-copy-id >/dev/null 2>&1 || die "--install-key 需要 ssh-copy-id"
+    [ -f "${VPS_SSH_KEY}.pub" ] \
+      || die "--install-key 需要公钥文件：${VPS_SSH_KEY}.pub"
+    if ssh "${VPS_SSH_OPTS[@]}" "${VPS_BOOTSTRAP_USER}@${VPS_HOST}" \
+      'true' >/dev/null 2>&1; then
+      ok "目标已接受当前 SSH key，跳过公钥安装"
+    else
+      say "将交互式安装 SSH 公钥；请输入 CStoneCloud 面板中的一次性 root 密码"
+      ssh-copy-id -i "${VPS_SSH_KEY}.pub" -p "$VPS_SSH_PORT" \
+        -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new \
+        -o ConnectTimeout=10 "${VPS_BOOTSTRAP_USER}@${VPS_HOST}"
+    fi
+  fi
+}
+
+provider_readiness() {
+  local remote_user remote_command readiness_script result rc
+  if ssh "${VPS_SSH_OPTS[@]}" "${VPS_ADMIN_USER}@${VPS_HOST}" \
+    'sudo -n true' >/dev/null 2>&1; then
+    remote_user="$VPS_ADMIN_USER"
+    remote_command='sudo -n bash -s'
+  else
+    remote_user="$VPS_BOOTSTRAP_USER"
+    remote_command='bash -s'
+  fi
+
+  readiness_script='set -eu
+[ "$(id -u)" -eq 0 ] || { echo "需要 root bootstrap 或免密 sudo 管理员" >&2; exit 40; }
+[ -r /etc/os-release ] || { echo "找不到 /etc/os-release" >&2; exit 41; }
+. /etc/os-release
+case "${ID:-}" in
+  debian|ubuntu) ;;
+  *) echo "只支持 Debian/Ubuntu，当前为 ${ID:-unknown}" >&2; exit 42 ;;
+esac
+command -v systemctl >/dev/null 2>&1 || { echo "目标系统缺少 systemd" >&2; exit 43; }
+case "$(uname -m)" in
+  x86_64|aarch64) ;;
+  *) echo "只支持 x86_64/aarch64，当前为 $(uname -m)" >&2; exit 44 ;;
+esac
+printf "%s|%s" "${PRETTY_NAME:-${ID:-unknown}}" "$(uname -m)"'
+
+  set +e
+  result="$(printf '%s\n' "$readiness_script" \
+    | ssh "${VPS_SSH_OPTS[@]}" "${remote_user}@${VPS_HOST}" \
+      "$remote_command")"
+  rc=$?
+  set -e
+  [ "$rc" -eq 0 ] || die "目标 readiness 检查失败；确认主机、SSH 公钥、root/免密 sudo、Debian/Ubuntu 与 systemd"
+  ok "目标已就绪：${result}|登录=${remote_user}"
 }
 
 provider_configure() {
+  local source_conf
   mkdir -p "$STATE_DIR"
   chmod 700 "$STATE_DIR"
   if [ ! -f "$CONF_FILE" ]; then
-    cp "$CONFIG_TEMPLATE" "$CONF_FILE"
-    sed -i.bak -e 's|^PROJECT_ID=.*|PROJECT_ID=vps|' "$CONF_FILE"
-    rm -f "$CONF_FILE.bak"
-    ok "已创建 profiles/$PROFILE_NAME/deploy.conf；可按需修改端口"
+    if [ -n "${VPS_CONFIG_FROM_PROFILE:-}" ]; then
+      [ "$VPS_CONFIG_FROM_PROFILE" != "$PROFILE_NAME" ] \
+        || die "来源 profile 不能与新 profile 相同"
+      source_conf="$PROJECT_DIR/profiles/$VPS_CONFIG_FROM_PROFILE/deploy.conf"
+      [ -f "$source_conf" ] \
+        || die "来源 profile 不存在 deploy.conf：profiles/$VPS_CONFIG_FROM_PROFILE/"
+      cp "$source_conf" "$CONF_FILE"
+      ok "已从 $VPS_CONFIG_FROM_PROFILE 复制非密钥部署配置；新 profile 会生成独立凭据"
+    else
+      cp "$CONFIG_TEMPLATE" "$CONF_FILE"
+      sed -i.bak -e 's|^PROJECT_ID=.*|PROJECT_ID=vps|' "$CONF_FILE"
+      rm -f "$CONF_FILE.bak"
+      ok "已创建 profiles/$PROFILE_NAME/deploy.conf；可按需修改端口"
+    fi
   fi
   load_conf
   PROVIDER_DESCRIPTION="provider=VPS  主机=$VPS_HOST"

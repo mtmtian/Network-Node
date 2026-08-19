@@ -36,23 +36,23 @@ docs/                          架构、排障和运维说明
 | `download.sh` | 远端二进制下载、重试和超时 |
 | `gen-clash.py` | 每个设备生成一份 Stash-first、Mihomo-compatible YAML |
 
-## 两条部署路径
+## 部署路径
 
-### GCP
+### CStoneCloud / 已有 Debian/Ubuntu VPS（当前主路径）
+
+```bash
+./deploy-vps.sh --profile cstone-next --host <VPS_PUBLIC_IP> \
+  --ssh-key "$HOME/.ssh/cstone_ed25519" \
+  --install-key --copy-config-from cstone
+```
+
+VPS 适配器负责可选的交互式公钥安装、远端 readiness、创建 `mt` 管理员、UFW 和文件上传。每台 VPS 必须使用唯一 profile，避免误读另一台服务器的状态。迁移时只复制旧 profile 的非密钥 `deploy.conf`，不会复制凭据或客户端 YAML。
+
+### GCP（当前未使用）
 
 `deploy-gcp.sh` → `providers/gcp.sh` → `providers/gcp-provision.sh` → `core/deploy.sh`
 
-GCP 适配器负责项目预检、静态 IP、VM、防火墙和 IAP SSH；协议安装和客户端生成仍由 `core/` 完成。
-
-### 已有 Debian/Ubuntu VPS
-
-```bash
-VPS_PROFILE=<profile> \
-VPS_SSH_KEY=/path/to/private-key \
-./deploy-vps.sh <VPS_PUBLIC_IP>
-```
-
-VPS 适配器负责初始 SSH、创建 `mt` 管理员、UFW 和文件上传。每台 VPS 必须使用唯一的 `VPS_PROFILE`，避免误读另一台服务器的状态。
+GCP adapter 暂时保留，负责项目预检、静态 IP、VM、防火墙和 IAP SSH；它不属于当前 cstone 运行路径。
 
 ## 一次部署的实际顺序
 
@@ -60,6 +60,8 @@ VPS 适配器负责初始 SSH、创建 `mt` 管理员、UFW 和文件上传。�
 入口脚本
   ↓
 provider 预检与读取 profile
+  ↓
+已有 VPS：只读检查 OS、架构、权限与 systemd
   ↓
 生成/复用本地凭据
   ↓
@@ -75,6 +77,8 @@ CDN_ENABLE=true 时：先完成 Cloudflare API / Tunnel / DNS
 ```
 
 Cloudflare 阶段在服务器修改之前执行。这样 Token、权限或 DNS 配置错误会在本地提前停止，不会先改防火墙再失败。
+
+新机迁移与回滚见 [VPS 迁移运行手册](vps-migration.md)，Xray、Hysteria2、AnyTLS 和 systemd 的保留/退出条件见 [协议栈评估](protocol-stack.md)。
 
 ## 节点和流量关系
 
@@ -131,9 +135,8 @@ profiles/<profile>/
 ### 重跑同一台服务器
 
 ```bash
-VPS_PROFILE=<profile> \
-VPS_SSH_KEY="$PWD/profiles/<profile>/ssh/id_rsa.pem" \
-./deploy-vps.sh
+./deploy-vps.sh --profile <profile> \
+  --ssh-key "$PWD/profiles/<profile>/ssh/id_rsa.pem"
 ```
 
 重跑会复用本地凭据和已有管理员。只有修改服务端参数、协议凭据或组件版本时，才需要重跑；只改客户端规则时不需要重启服务器。

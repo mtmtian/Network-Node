@@ -5,7 +5,7 @@ The repository keeps protocol behaviour and client routing rules in one shared c
 ## Entry points
 
 - `deploy-gcp.sh` loads the Google Cloud adapter.
-- `deploy-vps.sh` loads the generic Debian/Ubuntu VPS adapter and requires an explicit `VPS_PROFILE`.
+- `deploy-vps.sh` is the active CStoneCloud/generic Debian/Ubuntu path and requires an explicit profile.
 - `deploy.sh` is a compatibility alias for the GCP entry point.
 
 All entry points hand control to `core/deploy.sh`.
@@ -16,6 +16,7 @@ Each provider adapter implements the same shell interface:
 
 - `provider_init`: parse provider-specific arguments.
 - `provider_preflight`: validate local tools and authentication.
+- `provider_readiness` (optional): validate remote OS, architecture, privilege and systemd without changing the target.
 - `provider_configure`: create or load provider configuration.
 - `provider_provision`: obtain and secure a reachable host.
 - `provider_install`: copy and execute the shared server installer.
@@ -41,23 +42,18 @@ Provider state is isolated below `profiles/`:
 
 ```text
 profiles/
-├── gcloud/                    # fixed GCloud profile
-│   ├── deploy.conf
-│   ├── .secrets.env
-│   └── ssh/                    # optional local-only key storage
-├── dmit/                      # existing VPS profile
+├── cstone/                    # current active VPS profile
 │   ├── deploy.conf
 │   ├── .secrets.env
 │   └── ssh/id_rsa.pem
-└── <new-profile>/             # one independent bundle per new VPS
+└── cstone-next/               # replacement/new VPS, independent credentials
     ├── deploy.conf
     ├── .secrets.env
     └── ssh/                    # optional local-only key storage
 
 clash-configs/
-├── gcloud-{mac,iphone}.yaml
-├── dmit-{mac,iphone}.yaml
-└── <new-profile>-{mac,iphone}.yaml
+├── cstone-{mac,iphone}.yaml
+└── cstone-next-{mac,iphone}.yaml
 ```
 
 The entire `profiles/` tree is gitignored. This keeps host lifecycle state and credentials separate while both providers continue to consume the same protocol installer and routing-rule template.

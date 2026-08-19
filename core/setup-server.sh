@@ -575,7 +575,13 @@ if [ -n "$WARP_SERVICES" ]; then
   sudo systemctl restart $WARP_SERVICES
 fi
 sleep 2
-sudo systemctl is-active $PROXY_SERVICES $CDN_SERVICES $WARP_SERVICES || true
+for service in $PROXY_SERVICES $CDN_SERVICES $WARP_SERVICES; do
+  if ! sudo systemctl is-active --quiet "$service"; then
+    sudo systemctl --no-pager --full status "$service" || true
+    echo "服务启动失败：$service" >&2
+    exit 1
+  fi
+done
 
 echo "=== [8/8] Hardening (SSH + auto-updates) ==="
 sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq unattended-upgrades

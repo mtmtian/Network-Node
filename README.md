@@ -1,8 +1,8 @@
 # Self-hosted Network Node
 
-一套共享代理核心，两个明确入口：自动创建 Google Cloud 节点，或部署到任意已有 Debian/Ubuntu VPS。
+一套共享代理核心。当前主路径是把 CStoneCloud 或其他已有 Debian/Ubuntu VPS 接入独立 profile；仓库仍保留未启用的 Google Cloud adapter。
 
-One shared proxy core with two explicit deployment paths: Google Cloud or any existing Debian/Ubuntu VPS.
+One shared proxy core. The active path configures an existing CStoneCloud or other Debian/Ubuntu VPS; the unused Google Cloud adapter remains available.
 
 - Primary: VLESS + Reality
 - UDP fallback: Hysteria2
@@ -13,29 +13,29 @@ One shared proxy core with two explicit deployment paths: Google Cloud or any ex
 
 公共依赖：本机安装 `python3`、`openssl` 和 OpenSSH。
 
-### Google Cloud
+### CStoneCloud / 已有 Debian/Ubuntu VPS
 
-先安装并登录 `gcloud`，然后运行：
-
-```bash
-gcloud auth login
-gcloud config set project <你的项目ID>
-./deploy-gcp.sh
-```
-
-GCP adapter 会预留静态 IP、配置云防火墙、创建 Debian VM，并通过 IAP SSH 安装服务端。
-
-### 已有 Debian/Ubuntu VPS
-
-VPS 安装 Debian/Ubuntu，并把本机公钥加入初始 root 账户，然后运行：
+新机安装 Debian/Ubuntu 后，若 CStoneCloud 面板只提供 root 密码，可用一条命令交互式安装本机公钥、复制旧 cstone 的非密钥配置、生成全新凭据并部署：
 
 ```bash
-VPS_PROFILE=frantech \
-VPS_SSH_KEY="$HOME/.ssh/frantech_ed25519" \
-./deploy-vps.sh <VPS_PUBLIC_IP>
+./deploy-vps.sh \
+  --profile cstone-next \
+  --host <VPS_PUBLIC_IP> \
+  --ssh-key "$HOME/.ssh/cstone_ed25519" \
+  --install-key \
+  --copy-config-from cstone
 ```
 
-`VPS_PROFILE` 必须为每台 VPS 使用一个唯一名称，例如 `dmit`、`frantech`、`new-york-01`。
+`--install-key` 只在首次使用，它会调用系统 `ssh-copy-id` 并在终端中提示输入面板给出的一次性 root 密码；密码不会写入项目、参数或日志。该私钥旁需要存在同名 `.pub` 公钥文件。
+
+如果面板已经注入本机公钥，去掉 `--install-key` 即可。部署前也可先做不改远端、不创建 profile 的 readiness 检查：
+
+```bash
+./deploy-vps.sh --profile cstone-next --host <VPS_PUBLIC_IP> \
+  --ssh-key "$HOME/.ssh/cstone_ed25519" --check-only
+```
+
+`VPS_PROFILE` / `--profile` 必须为每台 VPS 使用唯一名称，例如 `cstone`、`cstone-next`、`los-angeles-02`。
 不要裸跑 `./deploy-vps.sh`，这样可以避免新服务器误用已有 profile。
 
 VPS adapter 会执行以下安全步骤：
@@ -52,6 +52,12 @@ VPS adapter 会执行以下安全步骤：
 
 首次部署后可以把主机专用私钥放在 `profiles/<profile>/ssh/`，也可以继续通过
 `VPS_SSH_KEY=/path/to/private-key` 显式指定。后续重跑时使用同一个 `VPS_PROFILE`，脚本会复用该 profile 的 IP、端口和本地密钥。
+
+完整迁移边界、回滚顺序和 CStoneCloud 控制台限制见 [VPS 迁移运行手册](docs/vps-migration.md)。协议与进程管理取舍见 [协议栈评估](docs/protocol-stack.md)。
+
+### Google Cloud（当前未使用）
+
+GCP adapter 仍可通过 `./deploy-gcp.sh` 使用，但不属于当前 cstone 主路径。删除它会改变已有公共入口，因此先保留为 dormant adapter，待确认无调用方后再单独清理。
 
 ## 目录结构
 
@@ -114,8 +120,8 @@ GCP 和 VPS 真正变化的只有服务器生命周期、连接方式与防火�
 - `clash-configs/<profile>-mac.yaml`
 - `clash-configs/<profile>-iphone.yaml`
 
-生成器只替换当前 profile 前缀的文件，例如 `frantech` 只处理 `frantech-*.yaml`，不会覆盖
-`dmit-*.yaml` 或 `gcloud-*.yaml`。客户端 YAML 默认权限为 `600`，因为其中含节点地址、UUID 和密码；
+生成器只替换当前 profile 前缀的文件，例如 `cstone-next` 只处理 `cstone-next-*.yaml`，不会覆盖
+`cstone-*.yaml`。客户端 YAML 默认权限为 `600`，因为其中含节点地址、UUID 和密码；
 这可阻止同一台电脑上的其他系统用户读取。iCloud 副本用于设备同步，不作为项目源状态。
 
 - Stash（首要兼容目标）：从配置文件页面导入本地或 iCloud YAML
@@ -185,11 +191,11 @@ Cloudflare 权限不足时，部署会在修改服务器前停止，不会留下
 ### Choose one entry point
 
 ```bash
-# Provision a new Google Cloud node
-./deploy-gcp.sh
+# Active path: configure an existing CStoneCloud/Debian/Ubuntu VPS
+./deploy-vps.sh --profile cstone-next --host <VPS_PUBLIC_IP> --ssh-key "$HOME/.ssh/cstone_ed25519" --copy-config-from cstone
 
-# Configure an existing Debian/Ubuntu VPS
-VPS_PROFILE=frantech VPS_SSH_KEY="$HOME/.ssh/frantech_ed25519" ./deploy-vps.sh <VPS_PUBLIC_IP>
+# Dormant path: provision a Google Cloud node
+./deploy-gcp.sh
 ```
 
 Both entry points run the same shared pipeline:

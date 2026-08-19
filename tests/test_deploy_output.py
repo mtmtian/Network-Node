@@ -13,6 +13,18 @@ PROJECT_ROOT = pathlib.Path(__file__).resolve().parent.parent
 
 
 class DeployOutputTest(unittest.TestCase):
+    def test_vps_help_documents_one_command_migration(self):
+        result = subprocess.run(
+            ["bash", str(PROJECT_ROOT / "deploy-vps.sh"), "--help"],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("--copy-config-from", result.stdout)
+        self.assertIn("--check-only", result.stdout)
+        self.assertIn("--install-key", result.stdout)
+
     def test_vps_entrypoint_requires_explicit_profile(self):
         result = subprocess.run(
             ["bash", str(PROJECT_ROOT / "deploy-vps.sh")],
@@ -22,6 +34,101 @@ class DeployOutputTest(unittest.TestCase):
         )
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("VPS_PROFILE", result.stderr)
+
+    def test_vps_check_only_uses_flags_without_creating_profile_state(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            fake_bin = root / "bin"
+            fake_bin.mkdir()
+            fake_ssh = fake_bin / "ssh"
+            fake_ssh.write_text(
+                "#!/bin/sh\n"
+                "case \"$*\" in *mt@*) exit 1 ;; esac\n"
+                "printf 'Debian GNU/Linux 12|x86_64'\n"
+            )
+            fake_ssh.chmod(0o755)
+            private_key = root / "id_ed25519"
+            private_key.write_text("test-only-placeholder\n")
+            state = root / "state"
+            env = os.environ.copy()
+            env["PATH"] = f"{fake_bin}:{env['PATH']}"
+            env["NETWORK_NODE_STATE_DIR"] = str(state)
+            result = subprocess.run(
+                [
+                    "bash",
+                    str(PROJECT_ROOT / "deploy-vps.sh"),
+                    "--profile",
+                    "cstone-next",
+                    "--host",
+                    "198.51.100.10",
+                    "--ssh-key",
+                    str(private_key),
+                    "--check-only",
+                ],
+                env=env,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+            self.assertIn("readiness 检查通过", result.stdout)
+            self.assertFalse(state.exists())
+
+    def test_vps_check_only_preserves_remote_readiness_diagnostic(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            fake_bin = root / "bin"
+            fake_bin.mkdir()
+            fake_ssh = fake_bin / "ssh"
+            fake_ssh.write_text(
+                "#!/bin/sh\n"
+                "case \"$*\" in *mt@*) exit 1 ;; esac\n"
+                "printf '只支持 Debian/Ubuntu，当前为 alpine\\n' >&2\n"
+                "exit 42\n"
+            )
+            fake_ssh.chmod(0o755)
+            private_key = root / "id_ed25519"
+            private_key.write_text("test-only-placeholder\n")
+            env = os.environ.copy()
+            env["PATH"] = f"{fake_bin}:{env['PATH']}"
+            result = subprocess.run(
+                [
+                    "bash",
+                    str(PROJECT_ROOT / "deploy-vps.sh"),
+                    "--profile",
+                    "cstone-next",
+                    "--host",
+                    "198.51.100.10",
+                    "--ssh-key",
+                    str(private_key),
+                    "--check-only",
+                ],
+                env=env,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("当前为 alpine", result.stderr)
+
+    def test_check_only_rejects_interactive_key_install(self):
+        result = subprocess.run(
+            [
+                "bash",
+                str(PROJECT_ROOT / "deploy-vps.sh"),
+                "--profile",
+                "cstone-next",
+                "--host",
+                "198.51.100.10",
+                "--check-only",
+                "--install-key",
+            ],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("不能同时使用", result.stderr)
 
     def test_reality_client_password_is_redacted_from_logs(self):
         command = (
@@ -82,6 +189,53 @@ class DeployOutputTest(unittest.TestCase):
                 check=False,
             )
             self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+
+    def test_vps_provider_copies_only_non_secret_config_for_new_profile(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            source_state = root / "profiles" / "cstone"
+            source_state.mkdir(parents=True)
+            (source_state / "deploy.conf").write_text(
+                "PROJECT_ID=vps\nDEVICES=mac\nREALITY_PORT=443\n"
+            )
+            (source_state / ".secrets.env").write_text("DO_NOT_COPY=secret\n")
+            command = textwrap.dedent(
+                f"""
+                set -euo pipefail
+                PROJECT_DIR={shlex.quote(str(root))}
+                PROFILE_NAME=cstone-next
+                VPS_CONFIG_FROM_PROFILE=cstone
+                VPS_HOST=203.0.113.10
+                mkdir -p "$PROJECT_DIR/core" "$PROJECT_DIR/providers" "$PROJECT_DIR/config"
+                cp {shlex.quote(str(PROJECT_ROOT / 'core' / 'common.sh'))} "$PROJECT_DIR/core/common.sh"
+                cp {shlex.quote(str(PROJECT_ROOT / 'providers' / 'vps.sh'))} "$PROJECT_DIR/providers/vps.sh"
+                cp {shlex.quote(str(PROJECT_ROOT / 'config' / 'deploy.conf.example'))} "$PROJECT_DIR/config/deploy.conf.example"
+                . "$PROJECT_DIR/core/common.sh"
+                . "$PROJECT_DIR/providers/vps.sh"
+                provider_configure >/dev/null
+                cmp "$PROJECT_DIR/profiles/cstone/deploy.conf" "$CONF_FILE"
+                test ! -e "$STATE_DIR/.secrets.env"
+                """
+            )
+            result = subprocess.run(
+                ["bash", "-c", command],
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+
+    def test_readiness_runs_before_profile_state_is_created(self):
+        deploy = (PROJECT_ROOT / "core" / "deploy.sh").read_text()
+        self.assertLess(
+            deploy.index("    provider_readiness\n"),
+            deploy.index("  provider_configure\n"),
+        )
+
+    def test_server_install_fails_when_a_required_service_is_inactive(self):
+        setup = (PROJECT_ROOT / "core" / "setup-server.sh").read_text()
+        self.assertIn('systemctl is-active --quiet "$service"', setup)
+        self.assertIn('echo "服务启动失败：$service"', setup)
 
     def test_server_env_quotes_special_values(self):
         with tempfile.TemporaryDirectory() as tmp:

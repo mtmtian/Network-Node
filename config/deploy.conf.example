@@ -69,7 +69,7 @@ CDN_WS_PATH=
 
 # ── 可选：直连 VPS 的 Reality + WARP 出站节点 ──
 # true 时额外生成 US-Reality-WARP：客户端仍直连 VPS，只有服务端出站经过 WARP。
-# 它不隐藏 VPS 入口 IP；会参加自动测速，但不会加入自动故障切换，避免故障时拖慢默认链路。
+# 它不隐藏 VPS 入口 IP；仅供手动选择，不加入自动测速或自动故障切换，避免自动选择改变公网出口。
 # 与 CDN_ONLY=true 互斥；WARP_REALITY_PORT 留空时自动生成 40000-49999 端口。
 WARP_ENABLE=false
 WARP_SOCKS_PORT=40000
