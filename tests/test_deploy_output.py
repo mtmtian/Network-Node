@@ -169,6 +169,7 @@ class DeployOutputTest(unittest.TestCase):
                 provider_configure() {{
                     mkdir -p \"$STATE_DIR\"
                     cp \"$PROJECT_DIR/config/deploy.conf.example\" \"$CONF_FILE\"
+                    printf 'CLIENT_FILE_PREFIX=frantech-client\\n' >> \"$CONF_FILE\"
                 }}
                 provider_provision() {{ setkv STATIC_IP 203.0.113.10; }}
                 provider_install() {{ printf 'REALITY_PUBLIC_KEY=test-public-key\\n'; }}
@@ -177,9 +178,9 @@ class DeployOutputTest(unittest.TestCase):
                 printf '%s\\n' \"$output\"
                 test -f \"$STATE_DIR/.secrets.env\"
                 test ! -e \"$PROJECT_DIR/profiles/gcloud/.secrets.env\"
-                test -f \"$PROJECT_DIR/clash-configs/frantech-mac.yaml\"
-                test -f \"$PROJECT_DIR/clash-configs/frantech-iphone.yaml\"
-                grep -F '配置文件  : {root}/clash-configs/frantech-*.yaml' <<<\"$output\" >/dev/null
+                test -f \"$PROJECT_DIR/clash-configs/frantech-client-mac.yaml\"
+                test -f \"$PROJECT_DIR/clash-configs/frantech-client-iphone.yaml\"
+                grep -F '配置文件  : {root}/clash-configs/frantech-client-*.yaml' <<<\"$output\" >/dev/null
                 """
             )
             result = subprocess.run(
@@ -190,13 +191,14 @@ class DeployOutputTest(unittest.TestCase):
             )
             self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
 
-    def test_vps_provider_copies_only_non_secret_config_for_new_profile(self):
+    def test_vps_provider_copies_non_secret_config_with_isolated_client_prefix(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = pathlib.Path(tmp)
             source_state = root / "profiles" / "cstone"
             source_state.mkdir(parents=True)
             (source_state / "deploy.conf").write_text(
                 "PROJECT_ID=vps\nDEVICES=mac\nREALITY_PORT=443\n"
+                "CLIENT_FILE_PREFIX=cstonecloud\n"
             )
             (source_state / ".secrets.env").write_text("DO_NOT_COPY=secret\n")
             command = textwrap.dedent(
@@ -213,7 +215,11 @@ class DeployOutputTest(unittest.TestCase):
                 . "$PROJECT_DIR/core/common.sh"
                 . "$PROJECT_DIR/providers/vps.sh"
                 provider_configure >/dev/null
-                cmp "$PROJECT_DIR/profiles/cstone/deploy.conf" "$CONF_FILE"
+                grep -Fx 'PROJECT_ID=vps' "$CONF_FILE" >/dev/null
+                grep -Fx 'DEVICES=mac' "$CONF_FILE" >/dev/null
+                grep -Fx 'REALITY_PORT=443' "$CONF_FILE" >/dev/null
+                grep -Fx 'CLIENT_FILE_PREFIX=cstone-next' "$CONF_FILE" >/dev/null
+                grep -Fx 'CLIENT_FILE_PREFIX=cstonecloud' "$PROJECT_DIR/profiles/cstone/deploy.conf" >/dev/null
                 test ! -e "$STATE_DIR/.secrets.env"
                 """
             )

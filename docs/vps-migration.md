@@ -34,24 +34,24 @@ Do not test reinstall or key-removal behavior on the active node merely to valid
 
 Prepare a local keypair once. Keep the private key local and ensure the matching `.pub` file exists beside it.
 
-For a replacement server with the panel-bound key already verified, use cstone's non-secret settings:
+For a replacement server with the panel-bound key already verified, use the current `cstonecloud-cuii-a` profile's non-secret settings:
 
 ```bash
 ./deploy-vps.sh \
   --profile cstone-next \
   --host <NEW_PUBLIC_IP> \
   --ssh-key "$HOME/.ssh/cstone_ed25519" \
-  --copy-config-from cstone
+  --copy-config-from cstonecloud-cuii-a
 ```
 
 This sequence:
 
 1. Checks Debian/Ubuntu, x86_64/aarch64, root or passwordless sudo, and systemd before creating profile state.
-2. Copies only `profiles/cstone/deploy.conf`. It never copies `.secrets.env`, SSH keys, or generated client YAML.
+2. Copies only `profiles/cstonecloud-cuii-a/deploy.conf`, resetting `CLIENT_FILE_PREFIX` to `cstone-next`. It never copies `.secrets.env`, SSH keys, or generated client YAML.
 3. Generates independent credentials under `profiles/cstone-next/`.
 4. Creates and verifies the `mt` sudo user before disabling root/password SSH.
 5. Installs the server stack and fails the deployment if any required systemd unit is inactive.
-6. Generates `clash-configs/cstone-next-*.yaml` without changing cstone's files.
+6. Generates `clash-configs/cstone-next-*.yaml` without changing the current `cstonecloud-*.yaml` files.
 
 If panel key binding is unavailable or unsuccessful, add `--install-key` to the deployment command. It uses `ssh-copy-id`; the root password is entered interactively and is never stored by this project. To validate an already keyed host without changing it:
 

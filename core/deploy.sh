@@ -123,5 +123,5 @@ run_deploy() {
   if [ "${CDN_ENABLE:-false}" = "true" ]; then
     echo "  CDN       : $CDN_HOSTNAME"
   fi
-  echo "  配置文件  : $CLIENTS_DIR/${PROFILE_NAME}-*.yaml"
+  echo "  配置文件  : $CLIENTS_DIR/${CLIENT_FILE_PREFIX:-$PROFILE_NAME}-*.yaml"
 }

@@ -6,15 +6,15 @@ Use one profile per server. A profile name is a local namespace for the server's
 
 1. Install Debian 12/13 64-bit or Ubuntu 24.04 LTS.
 2. Prefer binding a saved public key in the provider panel, then verify root key login from a new terminal. If that fails, use the provider's root password interactively with `--install-key`. Keep the private key on the local machine only.
-3. Run the generic VPS entry point with an explicit, unique profile name. For a CStoneCloud replacement that should inherit cstone's non-secret settings:
+3. Run the generic VPS entry point with an explicit, unique profile name. For a CStoneCloud replacement that should inherit the current profile's non-secret settings:
 
 ```bash
 ./deploy-vps.sh --profile cstone-next --host <VPS_PUBLIC_IP> \
   --ssh-key "$HOME/.ssh/cstone_ed25519" \
-  --copy-config-from cstone
+  --copy-config-from cstonecloud-cuii-a
 ```
 
-Add `--install-key` only if the provider did not install the public key. Use a different profile for every server, for example `cstone`, `cstone-next`, or `new-york-01`. Do not run `./deploy-vps.sh` without a profile.
+Add `--install-key` only if the provider did not install the public key. Use a different profile for every server, for example `cstonecloud-cuii-a`, `cstone-next`, or `new-york-01`. Do not run `./deploy-vps.sh` without a profile. When copying a profile, the new profile resets `CLIENT_FILE_PREFIX` to its own name so both generations of client YAML can coexist during cutover.
 
 The first run creates `profiles/<profile>/deploy.conf` and `.secrets.env`, secures the host, creates the `mt` sudo user, installs the shared protocols, and writes:
 
