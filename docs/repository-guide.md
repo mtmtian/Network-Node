@@ -43,10 +43,10 @@ docs/                          架构、排障和运维说明
 ```bash
 ./deploy-vps.sh --profile cstone-next --host <VPS_PUBLIC_IP> \
   --ssh-key "$HOME/.ssh/cstone_ed25519" \
-  --install-key --copy-config-from cstone
+  --copy-config-from cstone
 ```
 
-VPS 适配器负责可选的交互式公钥安装、远端 readiness、创建 `mt` 管理员、UFW 和文件上传。每台 VPS 必须使用唯一 profile，避免误读另一台服务器的状态。迁移时只复制旧 profile 的非密钥 `deploy.conf`，不会复制凭据或客户端 YAML。
+优先在商家面板绑定 SSH 公钥；只有面板注入失败时才加 `--install-key`。VPS 适配器负责可选的交互式公钥安装、远端 readiness、创建 `mt` 管理员、UFW 和文件上传。每台 VPS 必须使用唯一 profile，避免误读另一台服务器的状态。迁移时只复制旧 profile 的非密钥 `deploy.conf`，不会复制凭据或客户端 YAML。
 
 ### GCP（当前未使用）
 

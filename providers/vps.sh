@@ -48,7 +48,7 @@ provider_preflight() {
       'true' >/dev/null 2>&1; then
       ok "目标已接受当前 SSH key，跳过公钥安装"
     else
-      say "将交互式安装 SSH 公钥；请输入 CStoneCloud 面板中的一次性 root 密码"
+      say "将交互式安装 SSH 公钥；请输入商家面板中的 root 密码"
       ssh-copy-id -i "${VPS_SSH_KEY}.pub" -p "$VPS_SSH_PORT" \
         -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new \
         -o ConnectTimeout=10 "${VPS_BOOTSTRAP_USER}@${VPS_HOST}"
