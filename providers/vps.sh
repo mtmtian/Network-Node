@@ -104,7 +104,9 @@ provider_configure() {
       [ -f "$source_conf" ] \
         || die "来源 profile 不存在 deploy.conf：profiles/$VPS_CONFIG_FROM_PROFILE/"
       cp "$source_conf" "$CONF_FILE"
-      ok "已从 $VPS_CONFIG_FROM_PROFILE 复制非密钥部署配置；新 profile 会生成独立凭据"
+      sed -i.bak -e "s|^CLIENT_FILE_PREFIX=.*|CLIENT_FILE_PREFIX=$PROFILE_NAME|" "$CONF_FILE"
+      rm -f "$CONF_FILE.bak"
+      ok "已从 $VPS_CONFIG_FROM_PROFILE 复制非密钥部署配置；新 profile 会生成独立凭据和客户端文件"
     else
       cp "$CONFIG_TEMPLATE" "$CONF_FILE"
       sed -i.bak -e 's|^PROJECT_ID=.*|PROJECT_ID=vps|' "$CONF_FILE"

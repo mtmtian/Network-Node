@@ -24,7 +24,7 @@ usage() {
 示例：
   ./deploy-vps.sh --profile cstone-next --host 203.0.113.10 \
     --ssh-key "$HOME/.ssh/cstone_ed25519" \
-    --copy-config-from cstone
+    --copy-config-from cstonecloud-cuii-a
 USAGE
 }
 

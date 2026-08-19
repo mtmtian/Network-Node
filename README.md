@@ -15,14 +15,14 @@ One shared proxy core. The active path configures an existing CStoneCloud or oth
 
 ### CStoneCloud / 已有 Debian/Ubuntu VPS
 
-新机安装 Debian/Ubuntu 后，优先在 CStoneCloud 面板的「SSH 密钥」页面绑定本机公钥，然后复制旧 cstone 的非密钥配置、生成全新凭据并部署：
+新机安装 Debian/Ubuntu 后，优先在 CStoneCloud 面板的「SSH 密钥」页面绑定本机公钥，然后复制当前 CStoneCloud profile 的非密钥配置、生成全新凭据并部署：
 
 ```bash
 ./deploy-vps.sh \
   --profile cstone-next \
   --host <VPS_PUBLIC_IP> \
   --ssh-key "$HOME/.ssh/cstone_ed25519" \
-  --copy-config-from cstone
+  --copy-config-from cstonecloud-cuii-a
 ```
 
 绑定后先用一个新终端验证 root 公钥登录。若面板没有注入公钥，再加 `--install-key`：它会调用系统 `ssh-copy-id` 并交互式提示输入 root 密码；密码不会写入项目、参数或日志。该私钥旁需要存在同名 `.pub` 公钥文件。
@@ -34,7 +34,7 @@ One shared proxy core. The active path configures an existing CStoneCloud or oth
   --ssh-key "$HOME/.ssh/cstone_ed25519" --check-only
 ```
 
-`VPS_PROFILE` / `--profile` 必须为每台 VPS 使用唯一名称，例如 `cstone`、`cstone-next`、`los-angeles-02`。
+`VPS_PROFILE` / `--profile` 必须为每台 VPS 使用唯一名称，例如 `cstonecloud-cuii-a`、`cstone-next`、`los-angeles-02`。
 不要裸跑 `./deploy-vps.sh`，这样可以避免新服务器误用已有 profile。
 
 VPS adapter 会执行以下安全步骤：
@@ -191,7 +191,7 @@ Cloudflare 权限不足时，部署会在修改服务器前停止，不会留下
 
 ```bash
 # Active path: configure an existing CStoneCloud/Debian/Ubuntu VPS
-./deploy-vps.sh --profile cstone-next --host <VPS_PUBLIC_IP> --ssh-key "$HOME/.ssh/cstone_ed25519" --copy-config-from cstone
+./deploy-vps.sh --profile cstone-next --host <VPS_PUBLIC_IP> --ssh-key "$HOME/.ssh/cstone_ed25519" --copy-config-from cstonecloud-cuii-a
 
 # Dormant path: provision a Google Cloud node
 ./deploy-gcp.sh
