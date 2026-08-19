@@ -15,20 +15,19 @@ One shared proxy core. The active path configures an existing CStoneCloud or oth
 
 ### CStoneCloud / 已有 Debian/Ubuntu VPS
 
-新机安装 Debian/Ubuntu 后，若 CStoneCloud 面板只提供 root 密码，可用一条命令交互式安装本机公钥、复制旧 cstone 的非密钥配置、生成全新凭据并部署：
+新机安装 Debian/Ubuntu 后，优先在 CStoneCloud 面板的「SSH 密钥」页面绑定本机公钥，然后复制旧 cstone 的非密钥配置、生成全新凭据并部署：
 
 ```bash
 ./deploy-vps.sh \
   --profile cstone-next \
   --host <VPS_PUBLIC_IP> \
   --ssh-key "$HOME/.ssh/cstone_ed25519" \
-  --install-key \
   --copy-config-from cstone
 ```
 
-`--install-key` 只在首次使用，它会调用系统 `ssh-copy-id` 并在终端中提示输入面板给出的一次性 root 密码；密码不会写入项目、参数或日志。该私钥旁需要存在同名 `.pub` 公钥文件。
+绑定后先用一个新终端验证 root 公钥登录。若面板没有注入公钥，再加 `--install-key`：它会调用系统 `ssh-copy-id` 并交互式提示输入 root 密码；密码不会写入项目、参数或日志。该私钥旁需要存在同名 `.pub` 公钥文件。
 
-如果面板已经注入本机公钥，去掉 `--install-key` 即可。部署前也可先做不改远端、不创建 profile 的 readiness 检查：
+部署前也可先做不改远端、不创建 profile 的 readiness 检查：
 
 ```bash
 ./deploy-vps.sh --profile cstone-next --host <VPS_PUBLIC_IP> \
