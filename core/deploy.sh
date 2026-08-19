@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Shared deployment pipeline. Provider adapters implement this interface:
 # provider_init, provider_preflight, provider_configure, provider_provision,
-# provider_install, provider_print_summary.
+# provider_install, provider_print_summary. Existing-host adapters may also
+# implement read-only provider_readiness before profile state is created.
 
 build_server_env() {
   local target="$1" k d
@@ -50,6 +51,9 @@ run_deploy() {
 
   provider_init "$@"
   provider_preflight
+  if declare -F provider_readiness >/dev/null 2>&1; then
+    provider_readiness
+  fi
   provider_configure
   load_conf
   REALITY_TARGET="${REALITY_TARGET:-${REALITY_SNI}:443}"

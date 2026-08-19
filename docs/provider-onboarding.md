@@ -5,16 +5,16 @@ Use one profile per server. A profile name is a local namespace for the server's
 ## Existing Debian/Ubuntu VPS
 
 1. Install Debian 12/13 64-bit or Ubuntu 24.04 LTS.
-2. Confirm root SSH access with a public key. Keep the private key on the local machine only.
-3. Run the generic VPS entry point with an explicit, unique profile name:
+2. Confirm root SSH access with a public key, or use the provider's one-time root password with `--install-key`. Keep the private key on the local machine only.
+3. Run the generic VPS entry point with an explicit, unique profile name. For a CStoneCloud replacement that should inherit cstone's non-secret settings:
 
 ```bash
-VPS_PROFILE=frantech \
-VPS_SSH_KEY="$HOME/.ssh/frantech_ed25519" \
-./deploy-vps.sh <VPS_PUBLIC_IP>
+./deploy-vps.sh --profile cstone-next --host <VPS_PUBLIC_IP> \
+  --ssh-key "$HOME/.ssh/cstone_ed25519" \
+  --install-key --copy-config-from cstone
 ```
 
-Use a different profile for every server, for example `dmit`, `frantech`, or `new-york-01`. Do not run `./deploy-vps.sh` without `VPS_PROFILE`.
+Omit `--install-key` if the provider already installed the public key. Use a different profile for every server, for example `cstone`, `cstone-next`, or `new-york-01`. Do not run `./deploy-vps.sh` without a profile.
 
 The first run creates `profiles/<profile>/deploy.conf` and `.secrets.env`, secures the host, creates the `mt` sudo user, installs the shared protocols, and writes:
 
@@ -26,7 +26,7 @@ clash-configs/<profile>-iphone.yaml
 After the first successful run, root login is disabled and `mt` is the maintenance user:
 
 ```bash
-ssh -i "$HOME/.ssh/frantech_ed25519" mt@<VPS_PUBLIC_IP>
+ssh -i "$HOME/.ssh/cstone_ed25519" mt@<VPS_PUBLIC_IP>
 ```
 
 ## Adding another provider lifecycle
