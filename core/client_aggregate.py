@@ -15,6 +15,7 @@ import tempfile
 
 from client_output import write_outputs
 from client_policy import adapt_config
+from sensitive_policy import domain_rules, app_rules
 from profile_lock import profile_lock
 from settings import DEVICE, NAME, load_settings, validate
 
@@ -200,9 +201,13 @@ def dns_policy(rules):
 def compose(profile, device, target, nodes, sensitive):
     template = (CORE / 'client.yaml.tmpl').read_text()
     values = {name: '' for name in re.findall(r'\{([A-Z0-9_]+)\}', template)}
-    revision = hashlib.sha256(template.encode() + Path(__file__).read_bytes()).hexdigest()[:12]
+    revision = hashlib.sha256(template.encode() + Path(__file__).read_bytes()
+                              + (CORE / 'sensitive_policy.py').read_bytes()
+                              + (CORE / 'sensitive-services.json').read_bytes()
+                              + (CORE / 'client_policy.py').read_bytes()).hexdigest()[:12]
     values.update(DEVICE=device, PROFILE_OWNER=profile, TARGET_LABEL=target,
                   STRICT_LABEL='false', TEMPLATE_REVISION=revision,
+                  SENSITIVE_RULES=domain_rules(AI), APP_RULES=app_rules(target, device, AI),
                   SERVER_LABEL='Aggregate; per-server credentials remain in source profiles',
                   DNS_FOLLOW_RULE='  follow-rule: true' if target == 'stash' else '  respect-rules: true',
                   STUN_PROTOCOL_RULE=f'  - PROTOCOL,STUN,{AI}' if target == 'stash' else '')

@@ -2,6 +2,8 @@
 import copy
 import json
 import os
+import ipaddress
+import re
 from pathlib import Path
 import sys
 import subprocess
@@ -58,6 +60,77 @@ class AggregateTest(unittest.TestCase):
 
     def output(self, device='mac'):
         return self.root / 'clash-configs' / f'routing-{device}.yaml'
+
+    @unittest.skipUnless(yaml, 'PyYAML required')
+    def test_ai_core_domains_have_matching_sensitive_dns(self):
+        self.generate()
+        data = yaml.safe_load(self.output().read_text())
+        rules = [r.split(',') for r in data['rules']]
+        def sensitive(host):
+            for fields in rules:
+                if len(fields) < 3 or fields[2] != aggregate.AI:
+                    continue
+                kind, value = fields[:2]
+                if ((kind == 'DOMAIN' and host == value) or
+                    (kind == 'DOMAIN-SUFFIX' and (host == value or host.endswith('.' + value)))):
+                    return True
+            return False
+        # Product acceptance examples, independent of the generated data file.
+        required = ('api.openai.com', 'ws.chatgpt.com', 'api.anthropic.com',
+                    'rum.browser-intake-datadoghq.com', 'o207216.ingest.sentry.io',
+                    'antigravity.google', 'antigravity-pa.googleapis.com',
+                    'daily-cloudcode-pa.googleapis.com', 'aicode.googleapis.com',
+                    'businessaicode.googleapis.com', 'generativelanguage.googleapis.com',
+                    'accounts.google.com', 'oauth2.googleapis.com', 'www.googleapis.com',
+                    'antigravity-unleash.goog', 'us-central1-aiplatform.googleapis.com',
+                    'global-aiplatform.googleapis.com', 'api.dev.runwayml.com',
+                    'api.replicate.com', 'fal.run', 'v0.app', 'api.githubcopilot.com')
+        dns = data['dns']['nameserver-policy']
+        for host in required:
+            with self.subTest(host=host):
+                self.assertTrue(sensitive(host))
+                candidates = [(key, value) for key, value in dns.items() if key == host or
+                              (key.startswith('+.') and (host == key[2:] or host.endswith(key[1:])))]
+                self.assertTrue(candidates, 'missing sensitive DNS policy')
+                for key, value in candidates:
+                    self.assertEqual(value, ['https://1.1.1.1/dns-query', 'https://1.0.0.1/dns-query'])
+        for host in ('storage.googleapis.com', 'maps.googleapis.com', 'www.gstatic.com',
+                     'unrelated.sentry.io', 'datadog-unrelated.example', 'sift-example.com',
+                     'api.deepseek.com', 'doubao.com', 'api.spotify.com'):
+            self.assertFalse(sensitive(host), host)
+        for keyword in ('datadog', 'sentry', 'sift'):
+            self.assertFalse(any(r[:2] == ['DOMAIN-KEYWORD', keyword] for r in rules))
+
+    @unittest.skipUnless(yaml, 'PyYAML required')
+    def test_antigravity_bundle_routes_are_mac_only_and_client_specific(self):
+        paths = ('/Applications/Antigravity.app/Contents/MacOS/Antigravity',
+                 '/Applications/Antigravity.app/Contents/Resources/bin/language_server',
+                 '/Applications/Antigravity IDE.app/Contents/Frameworks/Helper.app/Contents/MacOS/Helper')
+        for target in ('stash', 'mihomo'):
+            self.generate(target=target)
+            data = yaml.safe_load(self.output().read_text())
+            rules = data['rules']
+            processes = [r for r in rules if r.startswith('PROCESS-')]
+            self.assertTrue(processes)
+            def matches(path):
+                return any(path.startswith(r.split(',')[1]) if target == 'stash' else
+                           re.fullmatch(r.split(',')[1], path) for r in processes)
+            for path in paths:
+                self.assertTrue(matches(path), path)
+            for path in ('/usr/bin/curl', '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+                         '/Applications/Antigravity.app.backup/Contents/MacOS/Antigravity'):
+                self.assertFalse(matches(path), path)
+            for rule in processes:
+                self.assertEqual(rule.split(',')[2], aggregate.AI)
+                self.assertLess(rules.index('IP-CIDR,192.168.0.0/16,DIRECT,no-resolve'), rules.index(rule))
+                self.assertLess(rules.index(rule), rules.index(f'RULE-SET,ads-lite,{aggregate.ADS}'))
+                self.assertLess(rules.index(rule), rules.index(f'RULE-SET,cn,{aggregate.CN}'))
+            iphone = yaml.safe_load(self.output('iphone').read_text())
+            self.assertFalse(any(r.startswith('PROCESS-') for r in iphone['rules']))
+            if target == 'stash':
+                for address in data['dns']['default-nameserver']:
+                    ipaddress.ip_address(address)
+                self.assertFalse(any(r.startswith('PROCESS-PATH-REGEX,') for r in processes))
 
     def test_sources_are_fresh_devices_isolated_and_outputs_owned(self):
         self.assertEqual(self.generate(), 0)

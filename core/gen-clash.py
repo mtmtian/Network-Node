@@ -18,6 +18,7 @@ import hashlib
 from settings import load_settings, validate
 from client_output import write_outputs
 from client_policy import adapt_config
+from sensitive_policy import domain_rules, app_rules
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("--check", action="store_true", help="只检查输出是否与当前配置一致，不写文件")
@@ -257,6 +258,8 @@ template_revision = hashlib.sha256(
     pathlib.Path(__file__).read_bytes() + TEMPLATE_PATH.read_bytes()
     + pathlib.Path(__file__).with_name("settings.py").read_bytes()
     + pathlib.Path(__file__).with_name("client_policy.py").read_bytes()
+    + pathlib.Path(__file__).with_name("sensitive_policy.py").read_bytes()
+    + pathlib.Path(__file__).with_name("sensitive-services.json").read_bytes()
 ).hexdigest()[:12]
 for dev in devices:
     uuid = env.get(f"REALITY_UUID_{dev}")
@@ -293,6 +296,8 @@ for dev in devices:
         TARGET_LABEL=CLIENT_TARGET,
         STRICT_LABEL=str(AI_STRICT_MODE).lower(),
         TEMPLATE_REVISION=template_revision,
+        SENSITIVE_RULES=domain_rules("🤖 AI 隐私出口"),
+        APP_RULES=app_rules(CLIENT_TARGET, dev, "🤖 AI 隐私出口"),
         DNS_FOLLOW_RULE="  follow-rule: true" if CLIENT_TARGET == "stash" else "  respect-rules: true",
         STUN_PROTOCOL_RULE="  - PROTOCOL,STUN,🤖 AI 隐私出口" if CLIENT_TARGET == "stash" else "",
         SERVER_LABEL=(

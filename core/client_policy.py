@@ -10,6 +10,10 @@ def remove_section(config, start, end):
 
 def adapt_config(config, target, strict, ai_nodes):
     if target == "stash":
+        # Stash accepts only IP literals for the bootstrap default-nameserver.
+        config = re.sub(r'(^  default-nameserver:\n)(.*?)(?=^  \S)',
+                        lambda m: m[1] + re.sub(r'https://([0-9.]+)/dns-query', r'\1', m[2]),
+                        config, flags=re.S | re.M)
         # Stash manages its own TUN and protocol sniffing.
         config = remove_section(config, "geodata-mode: true\n", "skip-proxy:\n")
         config = remove_section(config, "tun:\n", "dns:\n")

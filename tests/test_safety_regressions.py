@@ -105,7 +105,7 @@ class SafetyRegressions(unittest.TestCase):
                 rules = config.split("\nrules:\n", 1)[1]
                 for boundary in ("RULE-SET,ads-lite,", "DOMAIN-SUFFIX,cn,", "RULE-SET,cn,", "RULE-SET,cn-ip,"):
                     for dependency in ("DOMAIN-SUFFIX,openai.com,", "DOMAIN,anthropic.auth0.com,",
-                                       "DOMAIN,cdn.workos.com,", "DOMAIN-KEYWORD,datadog,", "RULE-SET,ai,"):
+                                       "DOMAIN,cdn.workos.com,", "DOMAIN,rum.browser-intake-datadoghq.com,", "RULE-SET,ai,"):
                         self.assertLess(rules.index(dependency), rules.index(boundary))
                 for resolver in ("223.5.5.5", "120.53.53.53"):
                     route = f"IP-CIDR,{resolver}/32,🇨🇳 国内流量,no-resolve"
@@ -133,7 +133,7 @@ class SafetyRegressions(unittest.TestCase):
         self.generate()
         rules = (self.output / "alpha-mac.yaml").read_text().split("\nrules:\n")[1]
         ads = rules.index("RULE-SET,ads-lite,")
-        for dependency in ("DOMAIN-KEYWORD,datadog,", "DOMAIN-KEYWORD,sentry,", "DOMAIN-KEYWORD,sift,",
+        for dependency in ("DOMAIN,rum.browser-intake-datadoghq.com,", "DOMAIN,o207216.ingest.sentry.io,", "DOMAIN,o33249.ingest.sentry.io,",
                            "DOMAIN,cdn.workos.com,", "DOMAIN,humb.apple.com,", "DOMAIN,js.stripe.com,"):
             self.assertLess(rules.index(dependency), ads)
 

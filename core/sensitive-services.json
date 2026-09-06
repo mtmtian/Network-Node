@@ -1,0 +1,146 @@
+{
+  "existing_ai": {
+    "suffixes": [
+      "anthropic.com",
+      "clau.de",
+      "claude.ai",
+      "claude.com",
+      "claudemcpclient.com",
+      "claudemcpcontent.com",
+      "claudeusercontent.com",
+      "statsigapi.net",
+      "intercom.io",
+      "intercomcdn.com",
+      "openai.com",
+      "chatgpt.com",
+      "oaistatic.com",
+      "oaiusercontent.com",
+      "gemini.google.com",
+      "aistudio.google.com",
+      "generativelanguage.googleapis.com",
+      "notebooklm.google.com",
+      "perplexity.ai",
+      "cursor.com",
+      "cursor.sh",
+      "chat.com",
+      "ct.sendgrid.net",
+      "featuregates.org",
+      "statsig.com"
+    ],
+    "domains": [
+      "servd-anthropic-website.b-cdn.net",
+      "anthropic.com.cdn.cloudflare.net",
+      "anthropic.auth0.com",
+      "anthropic-com.ghost.io",
+      "browser-intake-us5-datadoghq.com",
+      "cdn.usefathom.com",
+      "challenges.cloudflare.com",
+      "accounts.google.com",
+      "oauth2.googleapis.com",
+      "featureassets.org",
+      "prodregistryv2.org",
+      "cdn.openaimerge.com",
+      "cdn.workos.com",
+      "forwarder.workos.com",
+      "setup.workos.com",
+      "images.workoscdn.com",
+      "workos.imgix.net",
+      "humb.apple.com",
+      "js.stripe.com"
+    ]
+  },
+  "openai_dependencies": {
+    "suffixes": [],
+    "domains": [
+      "rum.browser-intake-datadoghq.com",
+      "o207216.ingest.sentry.io",
+      "o33249.ingest.sentry.io",
+      "events.statsigapi.net"
+    ]
+  },
+  "antigravity": {
+    "suffixes": [
+      "antigravity.google",
+      "antigravity-unleash.goog"
+    ],
+    "domains": [
+      "antigravity-pa.googleapis.com",
+      "antigravity.googleapis.com",
+      "cloudcode-pa.googleapis.com",
+      "daily-cloudcode-pa.googleapis.com",
+      "aicode.googleapis.com",
+      "businessaicode.googleapis.com",
+      "www.googleapis.com",
+      "aiplatform.googleapis.com",
+      "alkalimakersuiteapplets.pa.googleapis.com"
+    ]
+  },
+  "additional_ai": {
+    "suffixes": [
+      "runwayml.com",
+      "replicate.com",
+      "replicate.delivery",
+      "fal.ai",
+      "fal.run",
+      "v0.app",
+      "windsurf.com",
+      "windsurf.build",
+      "codeium.com",
+      "codeiumdata.com",
+      "githubcopilot.com",
+      "grok.com",
+      "x.ai",
+      "openrouter.ai",
+      "huggingface.co"
+    ],
+    "domains": [
+      "notebooklm-pa.googleapis.com"
+    ]
+  },
+  "vertex_ai": {
+    "suffixes": [],
+    "domains": [
+      "global-aiplatform.googleapis.com",
+      "us-aiplatform.googleapis.com",
+      "eu-aiplatform.googleapis.com",
+      "africa-south1-aiplatform.googleapis.com",
+      "asia-east1-aiplatform.googleapis.com",
+      "asia-east2-aiplatform.googleapis.com",
+      "asia-northeast1-aiplatform.googleapis.com",
+      "asia-northeast2-aiplatform.googleapis.com",
+      "asia-northeast3-aiplatform.googleapis.com",
+      "asia-south1-aiplatform.googleapis.com",
+      "asia-southeast1-aiplatform.googleapis.com",
+      "asia-southeast2-aiplatform.googleapis.com",
+      "australia-southeast1-aiplatform.googleapis.com",
+      "australia-southeast2-aiplatform.googleapis.com",
+      "europe-central2-aiplatform.googleapis.com",
+      "europe-north1-aiplatform.googleapis.com",
+      "europe-southwest1-aiplatform.googleapis.com",
+      "europe-west1-aiplatform.googleapis.com",
+      "europe-west2-aiplatform.googleapis.com",
+      "europe-west3-aiplatform.googleapis.com",
+      "europe-west4-aiplatform.googleapis.com",
+      "europe-west6-aiplatform.googleapis.com",
+      "europe-west8-aiplatform.googleapis.com",
+      "europe-west9-aiplatform.googleapis.com",
+      "europe-west12-aiplatform.googleapis.com",
+      "me-central1-aiplatform.googleapis.com",
+      "me-central2-aiplatform.googleapis.com",
+      "me-west1-aiplatform.googleapis.com",
+      "northamerica-northeast1-aiplatform.googleapis.com",
+      "northamerica-northeast2-aiplatform.googleapis.com",
+      "southamerica-east1-aiplatform.googleapis.com",
+      "southamerica-west1-aiplatform.googleapis.com",
+      "us-central1-aiplatform.googleapis.com",
+      "us-east1-aiplatform.googleapis.com",
+      "us-east4-aiplatform.googleapis.com",
+      "us-east5-aiplatform.googleapis.com",
+      "us-south1-aiplatform.googleapis.com",
+      "us-west1-aiplatform.googleapis.com",
+      "us-west2-aiplatform.googleapis.com",
+      "us-west3-aiplatform.googleapis.com",
+      "us-west4-aiplatform.googleapis.com"
+    ]
+  }
+}
