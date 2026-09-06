@@ -40,6 +40,9 @@ jobs:
             bash -n "$script"
           done
 
+      - name: Install test dependencies
+        run: python3 -m pip install -r requirements-test.txt
+
       - name: Run unit tests
         run: python3 -m unittest discover -s tests -p 'test_*.py' -v
 
@@ -52,3 +55,4 @@ jobs:
           gzip --decompress "$RUNNER_TEMP/mihomo.gz"
           chmod 755 "$RUNNER_TEMP/mihomo"
           MIHOMO_BIN="$RUNNER_TEMP/mihomo" python3 -m unittest discover -s tests -p 'test_mihomo_config.py' -v
+          MIHOMO_BIN="$RUNNER_TEMP/mihomo" python3 -m unittest discover -s tests -p 'test_aggregate.py' -v
