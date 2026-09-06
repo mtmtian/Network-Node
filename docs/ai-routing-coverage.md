@@ -4,12 +4,12 @@
 
 ## Antigravity：应用优先，域名补充
 
-Mac 配置在静态局域网规则之后、普通业务和广告规则之前，将以下应用包内的可执行文件送到「AI / Meta 服务」：
+汇总 Mac 配置在静态局域网规则之后、普通业务和广告规则之前，将以下应用包内的可执行文件送到「AI / Meta 服务」：
 
 - `/Applications/Antigravity.app/`：本机核对版本 2.12.2，含主程序、Electron 辅助程序与 `Contents/Resources/bin/language_server`。
 - `/Applications/Antigravity IDE.app/`：当前未安装；这是 2.12.2 Hub 安装代码内明确的独立 IDE 安装目标。
 
-Stash 使用 `PROCESS-NAME` 的包路径前缀模式，末尾 `/` 必须保留；Mihomo 使用单独生成的 `PROCESS-PATH-REGEX`，不能混用两种语义。默认经过敏感服务主备，排查时把「AI / Meta 服务」切到「手动选择」即可。没有增加外显分组。
+Stash 使用 `PROCESS-NAME` 的包路径前缀模式，末尾 `/` 必须保留；Mihomo 使用单独生成的 `PROCESS-PATH-REGEX`，不能混用两种语义。默认经过敏感服务主备，排查时把「AI / Meta 服务」切到「手动选择」即可。没有增加外显分组。单服务器配置复用同一批域名与应用规则，但出口仍是其既有「AI 隐私出口」组；本文的手动切换步骤指汇总配置。
 
 [Stash Mac 4.2.0 更新记录](https://stash.wiki/en/release-notes/macos)明确新增了末尾 `/` 的进程路径前缀匹配。本机 Stash 为 4.2.0，满足这项规则的版本要求。应用规则依赖客户端能识别连接的本机进程；浏览器登录、应用启动的外部 `curl` / Python / Node、远端 SSH 执行和不在这些包内的工具不继承应用身份。应用移到其他目录后应修改路径。iOS 不支持进程规则，因此只在设备名 `mac` 的配置中输出，其他设备仍依靠域名规则。参见 [Stash 规则类型](https://stash.wiki/rules/rule-types)。
 
