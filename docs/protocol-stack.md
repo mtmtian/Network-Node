@@ -32,6 +32,12 @@ The template currently uses `1.1.1.1:443` with empty SNI. Xray's official docume
 
 Do not mechanically add a fixed rate limit or pick another global CDN hostname. The better follow-up is to choose and validate a target appropriate to the server ASN, then update `REALITY_TARGET` and `REALITY_SNI` per profile. Until that decision is tested on cstone, the existing value remains unchanged to avoid breaking the active node.
 
+## Strict routing update (2026-09-05)
+
+Daily routing is the default: known AI dependencies use Reality/CDN through the same Xray IPv4 exit, while ordinary domestic traffic defaults to DIRECT. Strict AI routing remains opt-in and sends all public application traffic through that AI exit. HY2 and AnyTLS remain installed and rendered for daily mode but are absent from strict mode's policy groups. AnyTLS still has one password per profile; removing a device automatically rotates it on deployment and requires remaining devices to import fresh YAML. Its reference server still uses a temporary self-signed certificate and a password command-line argument. HY2 ACME is independent of AnyTLS; self-signed HY2 gains certificate pinning after the next successful deployment retrieves its fingerprint.
+
+Pinned component versions remain unchanged. Updating them requires reviewing and changing the official release SHA256 values in `core/download.sh`; downloads are verified before use and cached by digest. No live server upgrade is implied by these repository changes.
+
 ## AnyTLS exit criterion
 
 Do not remove AnyTLS based only on lack of recent manual use. First confirm that clients are not selecting it during a defined observation window and that Reality plus Hysteria cover the required failure modes. If that evidence holds, make AnyTLS opt-in for new profiles, verify cstone migration, and only then remove its firewall rule, binary, unit, secret and generated node as one coordinated change.

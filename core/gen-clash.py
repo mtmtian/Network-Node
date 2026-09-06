@@ -5,15 +5,24 @@ Reads deploy.conf (DEVICES, REALITY_PORT, REALITY_SNI, PROJECT_ID, REGION) and
 .secrets.env (STATIC_IP, REALITY_PUBLIC, REALITY_SHORTID, HY2_PORT,
 ANYTLS_PORT, ANYTLS_PASS, and per-device REALITY_UUID_<dev> / HY2_PASS_<dev>).
 
-Each device gets its OWN Reality UUID and Hysteria2 password so a single device
-can be revoked without affecting the others. Primary node is VLESS+Reality;
-Hysteria2 and AnyTLS are fallback options for compatible Stash/Mihomo clients.
+Reality/Hysteria2 use per-device credentials. AnyTLS uses one automatically
+managed password per profile; removing a device rotates it during deployment.
+Strict routing uses Reality/CDN only; daily routing also offers HY2/AnyTLS.
 """
 import pathlib
 import os
 import re
 import sys
-import tempfile
+import argparse
+import hashlib
+from settings import load_settings, validate
+from client_output import write_outputs
+from client_policy import adapt_config
+
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument("--check", action="store_true", help="只检查输出是否与当前配置一致，不写文件")
+parser.add_argument("--client", choices=("stash", "mihomo"), help="客户端目标，默认读取 CLIENT_TARGET/stash")
+args = parser.parse_args()
 
 ROOT = pathlib.Path(os.environ.get("NETWORK_NODE_ROOT", pathlib.Path(__file__).resolve().parent.parent))
 PROFILE = os.environ.get("NETWORK_NODE_PROFILE", "").strip()
@@ -26,22 +35,18 @@ STATE_DIR = pathlib.Path(
 OUT_DIR = pathlib.Path(os.environ.get("NETWORK_NODE_CLIENTS_DIR", ROOT / "clash-configs"))
 
 
-def load_kv(path):
-    data = {}
-    if not path.exists():
-        return data
-    for line in path.read_text().splitlines():
-        line = line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        k, v = line.split("=", 1)
-        data[k.strip()] = v.strip().strip('"').strip("'")
-    return data
-
-
-env = {}
-env.update(load_kv(STATE_DIR / "deploy.conf"))
-env.update(load_kv(STATE_DIR / ".secrets.env"))
+try:
+    env = load_settings(STATE_DIR)
+    if args.client:
+        env["CLIENT_TARGET"] = args.client
+    validate(env)
+except (ValueError, OSError) as exc:
+    sys.exit(f"ERROR: {exc}")
+if env.get("CLIENT_CONFIG_ENABLE", "true") == "false":
+    print("此 profile 已停用客户端配置输出，跳过生成和一致性检查")
+    sys.exit(0)
+CLIENT_TARGET = env.get("CLIENT_TARGET", "stash")
+AI_STRICT_MODE = env.get("AI_STRICT_MODE", "false") == "true"
 FILE_PREFIX = env.get("CLIENT_FILE_PREFIX", "").strip() or PROFILE
 
 devices = env.get("DEVICES", "mac iphone").split()
@@ -69,7 +74,7 @@ if CDN_ONLY and not cdn_on:
 
 WARP_ENABLE = env.get("WARP_ENABLE", "false") == "true"
 WARP_REALITY_PORT = env.get("WARP_REALITY_PORT", "").strip()
-PRIVACY_MODE = env.get("PRIVACY_MODE", "true") == "true"
+PRIVACY_MODE = env.get("PRIVACY_MODE", "false") == "true"
 if WARP_ENABLE and CDN_ONLY:
     sys.exit("ERROR: WARP_ENABLE=true 不能与 CDN_ONLY=true 同时使用（会重新暴露 VPS 入口）")
 
@@ -111,6 +116,13 @@ if HY2_ACME_ENABLE and not HY2_ACME_DOMAIN:
     sys.exit("ERROR: HY2_ACME_ENABLE=true 但缺少 HY2_ACME_DOMAIN")
 HY2_CLIENT_SNI = HY2_ACME_DOMAIN if HY2_ACME_ENABLE else HY2_SNI
 HY2_SKIP_CERT_VERIFY = "false" if HY2_ACME_ENABLE else "true"
+HY2_CERT_SHA256 = env.get("HY2_CERT_SHA256", "").replace(":", "").lower()
+if HY2_CERT_SHA256 and not re.fullmatch(r"[0-9a-f]{64}", HY2_CERT_SHA256):
+    sys.exit("ERROR: HY2_CERT_SHA256 必须是 64 位 SHA256 指纹")
+HY2_PIN = ""
+if not HY2_ACME_ENABLE and HY2_CERT_SHA256:
+    pin_field = "server-cert-fingerprint" if CLIENT_TARGET == "stash" else "fingerprint"
+    HY2_PIN = f'    {pin_field}: "{HY2_CERT_SHA256}"\n'
 HY2_OBFS_ENABLE = env.get("HY2_OBFS_ENABLE", "false") == "true"
 HY2_OBFS_PASSWORD = env.get("HY2_OBFS_PASSWORD", "").strip()
 if HY2_OBFS_ENABLE and not HY2_OBFS_PASSWORD:
@@ -124,6 +136,11 @@ CDN_REF = '\n      - "US-CDN"' if cdn_on else ""
 HY2_UP = env.get("HY2_UP", "").strip()
 HY2_DOWN = env.get("HY2_DOWN", "").strip()
 HY2_BW = f'    up: "{HY2_UP}"\n    down: "{HY2_DOWN}"\n' if HY2_UP and HY2_DOWN else ""
+if CLIENT_TARGET == "stash" and HY2_UP and HY2_DOWN:
+    def mbps(value):
+        match = re.fullmatch(r"(\d+(?:\.\d+)?)\s*([kmg]?bps)?", value, re.I)
+        return float(match[1]) * {None: 1, "bps": 0.000001, "kbps": 0.001, "mbps": 1, "gbps": 1000}[match[2].lower() if match[2] else None]
+    HY2_BW = f"    up-speed: {mbps(HY2_UP):g}\n    down-speed: {mbps(HY2_DOWN):g}\n"
 
 
 def cdn_proxy_block(dev_cdn_uuid):
@@ -212,421 +229,35 @@ def direct_proxy_blocks(dev_uuid, hy2_password):
     type: hysteria2
     server: {env['STATIC_IP']}
 {hy2_port}    password: "{hy2_password}"
-    auth: "{hy2_password}"
     sni: {HY2_CLIENT_SNI}
     skip-cert-verify: {HY2_SKIP_CERT_VERIFY}
     alpn:
       - h3
-{HY2_BW}{hy2_hop}{hy2_obfs}'''
+{HY2_PIN}{HY2_BW}{hy2_hop}{hy2_obfs}'''
+    if CLIENT_TARGET == "stash":
+        hy2 = hy2.replace("    password:", "    auth:")
     anytls = f'''  - name: "US-AnyTLS"
     type: anytls
     server: {env['STATIC_IP']}
     port: {env['ANYTLS_PORT']}
     password: "{env['ANYTLS_PASS']}"
-    sni: {HY2_CLIENT_SNI}
-    skip-cert-verify: {HY2_SKIP_CERT_VERIFY}
+    sni: {HY2_SNI}
+    skip-cert-verify: true
     client-fingerprint: chrome
     udp: true
 '''
     return reality, hy2, anytls
 
-TEMPLATE = """# Stash-first / Mihomo-compatible config — device: {DEVICE}
-# Server: {SERVER_LABEL}
+TEMPLATE_PATH = pathlib.Path(__file__).with_name("client.yaml.tmpl")
+TEMPLATE = TEMPLATE_PATH.read_text()
 
-mixed-port: 7890
-allow-lan: false
-mode: rule
-log-level: info
-ipv6: false
-geodata-mode: true
-find-process-mode: strict
-sniffer:
-  enable: true
-  sniff:
-    HTTP:
-      ports:
-        - 80
-        - 8080-8880
-      override-destination: true
-    TLS:
-      ports:
-        - 443
-        - 8443
-    QUIC:
-      ports:
-        - 443
-        - 8443
-
-skip-proxy:
-  - 127.0.0.1
-  - 192.168.0.0/16
-  - 10.0.0.0/8
-  - 172.16.0.0/12
-  - 100.64.0.0/10
-  - localhost
-  - "*.local"
-  - captive.apple.com
-
-tun:
-  enable: true
-  stack: mixed
-  mtu: 1280
-  auto-route: true
-  auto-detect-interface: true
-  strict-route: true
-  dns-hijack:
-    - "any:53"
-    - "tcp://any:53"
-
-dns:
-  enable: true
-  listen: 127.0.0.1:1053
-  ipv6: false
-  enhanced-mode: fake-ip
-  fake-ip-range: 198.18.0.1/16
-  # Mihomo 与 Stash 分别使用 respect-rules / follow-rule。
-  respect-rules: true
-  follow-rule: true
-  fake-ip-filter:
-    - "*.lan"
-    - "*.local"
-    - "*.apple.com"
-    - "*.apple"
-    - "app-analytics-services.com"
-    - "time.*.com"
-    - "ntp.*.com"
-    - "*.ntp.org"
-    - "+.msftconnecttest.com"
-    - "+.msftncsi.com"
-    - "localhost.ptlogin2.qq.com"
-  default-nameserver:
-    - 223.5.5.5
-    - 1.1.1.1
-  # 仅用于代理节点域名的 bootstrap，避免 DNS 经代理时递归依赖。
-  proxy-server-nameserver:
-    - https://223.5.5.5/dns-query
-    - https://1.12.12.12/dns-query
-  # 业务 DNS 按代理规则出站；IP 形式避免再次解析 DoH 主机名。
-  nameserver:
-    - https://1.1.1.1/dns-query
-    - https://8.8.8.8/dns-query
-  # 国内流量使用国内加密 DNS，避免 DIRECT 连接仍拿海外 DoH 的解析结果或明文泄漏。
-  nameserver-policy:
-    '+.cn':
-      - https://223.5.5.5/dns-query
-      - https://120.53.53.53/dns-query
-    'geosite:cn':
-      - https://223.5.5.5/dns-query
-      - https://120.53.53.53/dns-query
-
-proxies:
-{REALITY_PROXY}{HY2_PROXY}{ANYTLS_PROXY}
-{WARP_PROXY}
-{CDN_PROXY}
-proxy-groups:
-  - name: "🚀 代理策略"
-    type: select
-    proxies:
-      - "🛟 自动故障切换"
-      - "⚡ 自动测速"
-      - "🔧 手动选择"{CDN_REF}
-      - DIRECT
-
-  # AI 与 STUN 只使用共享 Xray IPv4 出口；Reality 失败时可经 CDN 进入同一 Xray。
-  - name: "🤖 AI 隐私出口"
-    type: fallback
-    lazy: true
-    url: https://www.gstatic.com/generate_204
-    interval: 300
-    proxies:
-{AI_PROXIES}
-
-  - name: "🛟 自动故障切换"
-    type: fallback
-    lazy: true
-    url: https://www.gstatic.com/generate_204
-    interval: 300
-    proxies:
-{FALLBACK_PROXIES}
-
-  - name: "⚡ 自动测速"
-    type: url-test
-    lazy: true
-    url: https://www.gstatic.com/generate_204
-    interval: 600
-    tolerance: 150
-    proxies:
-{AUTO_PROXIES}
-
-  - name: "🔧 手动选择"
-    type: select
-    proxies:
-{MANUAL_PROXIES}
-      - DIRECT
-
-  - name: "🌐 代理流量"
-    type: select
-    proxies:
-      - "🚀 代理策略"
-      - "⚡ 自动测速"
-      - "🔧 手动选择"
-{ALL_PROXIES}
-      - DIRECT
-
-  - name: "↪️ 直连流量"
-    type: select
-    proxies:
-      - DIRECT
-      - "🚀 代理策略"
-      - "🔧 手动选择"
-
-  # PRIVACY_MODE 只决定默认顺序；可在客户端随时切换 CN 流量出口。
-  - name: "🇨🇳 国内流量"
-    type: select
-    proxies:
-{CN_POLICY_OPTIONS}
-
-  - name: "🛑 屏蔽流量"
-    type: select
-    proxies:
-      - REJECT
-      - DIRECT
-      - "🚀 代理策略"
-
-  - name: "🎯 兜底策略"
-    type: select
-    proxies:
-      - "🚀 代理策略"
-      - DIRECT
-
-rule-providers:
-  # --- MetaCubeX: AI / Google ---
-  ai:
-    type: http
-    behavior: domain
-    format: mrs
-    url: "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite/category-ai-%21cn.mrs"
-    path: ./ruleset/meta_ai.mrs
-    interval: 86400
-
-  google:
-    type: http
-    behavior: domain
-    format: mrs
-    url: "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite/google.mrs"
-    path: ./ruleset/meta_google.mrs
-    interval: 86400
-
-  # --- blackmatrix7: iOS / Apple 功能补丁 ---
-  siri:
-    type: http
-    behavior: classical
-    format: yaml
-    url: "https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/Siri/Siri.yaml"
-    path: ./ruleset/bm7_siri.yaml
-    interval: 86400
-
-  icloud-private-relay:
-    type: http
-    behavior: classical
-    format: yaml
-    url: "https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/iCloudPrivateRelay/iCloudPrivateRelay.yaml"
-    path: ./ruleset/bm7_icloud_private_relay.yaml
-    interval: 86400
-
-  # --- MetaCubeX: Apple 基础直连 ---
-  icloud:
-    type: http
-    behavior: domain
-    format: mrs
-    url: "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite/icloud.mrs"
-    path: ./ruleset/meta_icloud.mrs
-    interval: 86400
-
-  apple-cn:
-    type: http
-    behavior: domain
-    format: mrs
-    url: "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite/apple-cn.mrs"
-    path: ./ruleset/meta_apple_cn.mrs
-    interval: 86400
-
-  # --- blackmatrix7: 轻量广告拦截 ---
-  ads-lite:
-    type: http
-    behavior: classical
-    format: yaml
-    url: "https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/AdvertisingLite/AdvertisingLite.yaml"
-    path: ./ruleset/bm7_ads_lite.yaml
-    interval: 86400
-
-  # --- MetaCubeX: 国内直连 ---
-  private:
-    type: http
-    behavior: domain
-    format: mrs
-    url: "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite/private.mrs"
-    path: ./ruleset/meta_private.mrs
-    interval: 86400
-
-  private-ip:
-    type: http
-    behavior: ipcidr
-    format: mrs
-    url: "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geoip/private.mrs"
-    path: ./ruleset/meta_private_ip.mrs
-    interval: 86400
-
-  cn:
-    type: http
-    behavior: domain
-    format: mrs
-    url: "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite/cn.mrs"
-    path: ./ruleset/meta_cn.mrs
-    interval: 86400
-
-  cn-ip:
-    type: http
-    behavior: ipcidr
-    format: mrs
-    url: "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geoip/cn.mrs"
-    path: ./ruleset/meta_cn_ip.mrs
-    interval: 86400
-
-  # --- MetaCubeX: 通讯 / 海外服务 ---
-  telegram:
-    type: http
-    behavior: domain
-    format: mrs
-    url: "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite/telegram.mrs"
-    path: ./ruleset/meta_telegram.mrs
-    interval: 86400
-
-  telegram-ip:
-    type: http
-    behavior: ipcidr
-    format: mrs
-    url: "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geoip/telegram.mrs"
-    path: ./ruleset/meta_telegram_ip.mrs
-    interval: 86400
-
-  tiktok:
-    type: http
-    behavior: domain
-    format: mrs
-    url: "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite/tiktok.mrs"
-    path: ./ruleset/meta_tiktok.mrs
-    interval: 86400
-
-rules:
-  # --- [P0] 规则更新 / GitHub raw 走代理，避免大陆网络下规则集刷新失败 ---
-  - DOMAIN-SUFFIX,raw.githubusercontent.com,🌐 代理流量
-
-  # --- [P1] Claude / Anthropic 及其依赖固定到同一个 IPv4 Xray 出口 ---
-  # Stash 不接受 Mihomo 的数组型 inline rule-provider payload；静态锚点直接放在 rules 中。
-  # 这些规则必须早于动态 AI、广告拦截和所有直连规则。
-  - DOMAIN-KEYWORD,stun,🤖 AI 隐私出口
-  - DOMAIN-SUFFIX,anthropic.com,🤖 AI 隐私出口
-  - DOMAIN-SUFFIX,clau.de,🤖 AI 隐私出口
-  - DOMAIN-SUFFIX,claude.ai,🤖 AI 隐私出口
-  - DOMAIN-SUFFIX,claude.com,🤖 AI 隐私出口
-  - DOMAIN-SUFFIX,claudemcpclient.com,🤖 AI 隐私出口
-  - DOMAIN-SUFFIX,claudemcpcontent.com,🤖 AI 隐私出口
-  - DOMAIN-SUFFIX,claudeusercontent.com,🤖 AI 隐私出口
-  - DOMAIN,servd-anthropic-website.b-cdn.net,🤖 AI 隐私出口
-  - DOMAIN,anthropic.com.cdn.cloudflare.net,🤖 AI 隐私出口
-  - DOMAIN,anthropic.auth0.com,🤖 AI 隐私出口
-  - DOMAIN,anthropic-com.ghost.io,🤖 AI 隐私出口
-  - DOMAIN-SUFFIX,sentry.io,🤖 AI 隐私出口
-  - DOMAIN-SUFFIX,statsigapi.net,🤖 AI 隐私出口
-  - DOMAIN,browser-intake-us5-datadoghq.com,🤖 AI 隐私出口
-  - DOMAIN-KEYWORD,datadog,🤖 AI 隐私出口
-  - DOMAIN-KEYWORD,sentry,🤖 AI 隐私出口
-  - DOMAIN-KEYWORD,sift,🤖 AI 隐私出口
-  - DOMAIN-SUFFIX,intercom.io,🤖 AI 隐私出口
-  - DOMAIN-SUFFIX,intercomcdn.com,🤖 AI 隐私出口
-  - DOMAIN,cdn.usefathom.com,🤖 AI 隐私出口
-  - IP-CIDR,160.79.104.0/21,🤖 AI 隐私出口,no-resolve
-  - IP-CIDR6,2607:6bc0::/32,🤖 AI 隐私出口,no-resolve
-  - IP-ASN,399358,🤖 AI 隐私出口,no-resolve
-  - GEOSITE,category-ntp,🤖 AI 隐私出口
-  - DST-PORT,123,🤖 AI 隐私出口
-  - DOMAIN-SUFFIX,openai.com,🤖 AI 隐私出口
-  - DOMAIN-SUFFIX,chatgpt.com,🤖 AI 隐私出口
-  - DOMAIN-SUFFIX,oaistatic.com,🤖 AI 隐私出口
-  - DOMAIN-SUFFIX,oaiusercontent.com,🤖 AI 隐私出口
-  - DOMAIN-SUFFIX,gemini.google.com,🤖 AI 隐私出口
-  - DOMAIN-SUFFIX,aistudio.google.com,🤖 AI 隐私出口
-  - DOMAIN-SUFFIX,generativelanguage.googleapis.com,🤖 AI 隐私出口
-  - DOMAIN-SUFFIX,notebooklm.google.com,🤖 AI 隐私出口
-  - DOMAIN-SUFFIX,perplexity.ai,🤖 AI 隐私出口
-  - DOMAIN-SUFFIX,cursor.com,🤖 AI 隐私出口
-  - RULE-SET,ai,🤖 AI 隐私出口
-  - RULE-SET,google,🌐 代理流量
-
-  # --- [P2] iOS / Apple 海外能力：Siri 与 iCloud Private Relay 相关域名走代理 ---
-  - RULE-SET,siri,🌐 代理流量
-  - DOMAIN,guzzoni.smoot.apple.com,🌐 代理流量
-  - DOMAIN,probe.siri.apple.com,🌐 代理流量
-  - DOMAIN,seed.siri.apple.com,🌐 代理流量
-  - DOMAIN,seed-sequoia.siri.apple.com,🌐 代理流量
-  - DOMAIN,seed-swallow.siri.apple.com,🌐 代理流量
-  - DOMAIN,sequoia.apple.com,🌐 代理流量
-  - DOMAIN,swallow.apple.com,🌐 代理流量
-  - RULE-SET,icloud-private-relay,🌐 代理流量
-
-  # --- [P3] 业务/归因/广告平台保护：必须放在广告拦截前，避免误杀 ---
-  - DOMAIN-SUFFIX,tradingview.com,🌐 代理流量
-  - DOMAIN-SUFFIX,applovin.com,🌐 代理流量
-  - DOMAIN-SUFFIX,applvn.com,🌐 代理流量
-  - DOMAIN-SUFFIX,applovinedge.com,🌐 代理流量
-  - DOMAIN-SUFFIX,appsflyer.com,🌐 代理流量
-  - DOMAIN-SUFFIX,adjust.com,🌐 代理流量
-  - DOMAIN-SUFFIX,adj.st,🌐 代理流量
-  - DOMAIN-SUFFIX,kochava.com,🌐 代理流量
-  - DOMAIN-SUFFIX,branch.io,🌐 代理流量
-  - DOMAIN-SUFFIX,singular.net,🌐 代理流量
-  - DOMAIN-SUFFIX,ads.google.com,🌐 代理流量
-  - DOMAIN-SUFFIX,adwords.google.com,🌐 代理流量
-  - DOMAIN-SUFFIX,analytics.google.com,🌐 代理流量
-  - DOMAIN-SUFFIX,googletagmanager.com,🌐 代理流量
-  - DOMAIN-SUFFIX,googleadservices.com,🌐 代理流量
-  - DOMAIN-SUFFIX,googlesyndication.com,🌐 代理流量
-  - DOMAIN-SUFFIX,googletagservices.com,🌐 代理流量
-  - DOMAIN-SUFFIX,ads.tiktok.com,🌐 代理流量
-  - DOMAIN-SUFFIX,business.tiktok.com,🌐 代理流量
-
-  # --- [P4] 原手写保留项：未确认是否仍需直连，先按旧配置保守保留 ---
-  - DOMAIN-KEYWORD,spotify,↪️ 直连流量
-  - DOMAIN-SUFFIX,scdn.co,↪️ 直连流量
-
-  # --- [P5] 轻量广告拦截 ---
-  - RULE-SET,ads-lite,🛑 屏蔽流量
-
-  # --- [P6] Apple 基础服务直连：放在 Siri/Private Relay 后，避免海外能力被直连抢走 ---
-  - RULE-SET,icloud,↪️ 直连流量
-  - RULE-SET,apple-cn,↪️ 直连流量
-
-  # --- [P7] 通讯 / 海外 App ---
-  - RULE-SET,telegram,🌐 代理流量
-  - RULE-SET,telegram-ip,🌐 代理流量,no-resolve
-  - RULE-SET,tiktok,🌐 代理流量
-
-  # --- [P8] 内网始终直连；公开 CN 流量可在客户端手动切换 ---
-  - RULE-SET,private,DIRECT
-  - RULE-SET,private-ip,DIRECT,no-resolve
-  # 部分国内产品未及时进入 geosite:cn；先按 .cn 后缀送入国内流量组。
-  - DOMAIN-SUFFIX,cn,🇨🇳 国内流量
-  - RULE-SET,cn,🇨🇳 国内流量
-  - RULE-SET,cn-ip,🇨🇳 国内流量,no-resolve
-  - GEOIP,LAN,DIRECT,no-resolve
-  - GEOIP,CN,🇨🇳 国内流量,no-resolve
-
-  # --- [P9] 兜底 ---
-  - MATCH,🎯 兜底策略
-"""
 
 rendered = {}
+template_revision = hashlib.sha256(
+    pathlib.Path(__file__).read_bytes() + TEMPLATE_PATH.read_bytes()
+    + pathlib.Path(__file__).with_name("settings.py").read_bytes()
+    + pathlib.Path(__file__).with_name("client_policy.py").read_bytes()
+).hexdigest()[:12]
 for dev in devices:
     uuid = env.get(f"REALITY_UUID_{dev}")
     hy2pw = env.get(f"HY2_PASS_{dev}")
@@ -658,9 +289,15 @@ for dev in devices:
 
     yaml = TEMPLATE.format(
         DEVICE=dev,
+        PROFILE_OWNER=PROFILE or FILE_PREFIX,
+        TARGET_LABEL=CLIENT_TARGET,
+        STRICT_LABEL=str(AI_STRICT_MODE).lower(),
+        TEMPLATE_REVISION=template_revision,
+        DNS_FOLLOW_RULE="  follow-rule: true" if CLIENT_TARGET == "stash" else "  respect-rules: true",
+        STUN_PROTOCOL_RULE="  - PROTOCOL,STUN,🤖 AI 隐私出口" if CLIENT_TARGET == "stash" else "",
         SERVER_LABEL=(
             f"{env['STATIC_IP']} | primary: VLESS+Reality:{env['REALITY_PORT']} | "
-            f"fallback: Hysteria2:{env['HY2_PORT']}/udp, AnyTLS:{env['ANYTLS_PORT']}/tcp"
+            f"{'reserved' if AI_STRICT_MODE else 'fallback'}: Hysteria2:{env['HY2_PORT']}/udp, AnyTLS:{env['ANYTLS_PORT']}/tcp"
             if not CDN_ONLY
             else "Cloudflare Tunnel only"
         ),
@@ -678,37 +315,15 @@ for dev in devices:
         ALL_PROXIES=node_ref_block(all_nodes),
         **env,
     )
+    yaml = adapt_config(yaml, CLIENT_TARGET, AI_STRICT_MODE, ai_nodes)
     filename = f"{FILE_PREFIX}-{dev}.yaml" if FILE_PREFIX else f"{dev}.yaml"
     rendered[OUT_DIR / filename] = yaml
 
-OUT_DIR.mkdir(parents=True, exist_ok=True, mode=0o700)
-OUT_DIR.chmod(0o700)
-temporary = []
 try:
-    for path, yaml in rendered.items():
-        with tempfile.NamedTemporaryFile(
-            mode="w",
-            encoding="utf-8",
-            dir=OUT_DIR,
-            prefix=f".{path.name}.",
-            suffix=".tmp",
-            delete=False,
-        ) as handle:
-            handle.write(yaml)
-            handle.flush()
-            os.fsync(handle.fileno())
-            temporary.append((pathlib.Path(handle.name), path))
-        pathlib.Path(handle.name).chmod(0o600)
-    for temporary_path, path in temporary:
-        os.replace(temporary_path, path)
-        print(f"  wrote {path.name} ({len(rendered[path])} bytes)")
-finally:
-    for temporary_path, _ in temporary:
-        temporary_path.unlink(missing_ok=True)
-
-expected_paths = set(rendered)
-for stale in OUT_DIR.glob(f"{FILE_PREFIX}-*.yaml"):
-    if stale not in expected_paths:
-        stale.unlink()
-
-print(f"\n全部 {len(devices)} 份配置已写入 {OUT_DIR}")
+    current = write_outputs(OUT_DIR, PROFILE or FILE_PREFIX, rendered, check=args.check)
+except (ValueError, OSError) as exc:
+    sys.exit(f"ERROR: {exc}")
+if args.check:
+    print("配置与当前源一致" if current else "配置缺失或已过期；请运行 render")
+    sys.exit(0 if current else 1)
+print(f"全部 {len(devices)} 份 {CLIENT_TARGET} 配置已写入 {OUT_DIR}；AI 严格模式={AI_STRICT_MODE}")

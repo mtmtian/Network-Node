@@ -4,6 +4,7 @@ PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 . "$PROJECT_DIR/core/common.sh"
 load_conf
 load_secrets
+python3 "$PROJECT_DIR/core/settings.py" validate "$STATE_DIR"
 
 say "生成/复用本地密钥..."
 
@@ -28,11 +29,16 @@ ensure_port() {
   current="$(secret_get "$key")"
   [ -n "$current" ] && return
 
-  if command -v shuf >/dev/null 2>&1; then
-    port="$(shuf -i "${min}-${max}" -n1)"
-  else
-    port="$(python3 -c "import random; print(random.randint($min,$max))")"
-  fi
+  port="$(python3 - "$min" "$max" <<'PY'
+import os, secrets, sys
+used = {os.environ.get(key, "") for key in ("REALITY_PORT", "ANYTLS_PORT", "HY2_PORT", "WARP_REALITY_PORT", "VPS_SSH_PORT")}
+used.add(os.environ.get("WARP_SOCKS_PORT", "40000"))
+if os.environ.get("CDN_ENABLE") == "true":
+    used.update(("8080", "20241"))
+available = [port for port in range(int(sys.argv[1]), int(sys.argv[2]) + 1) if str(port) not in used]
+print(secrets.choice(available))
+PY
+)"
   setkv "$key" "$port"
 }
 
@@ -46,6 +52,31 @@ fi
 # Reality short-id 与 AnyTLS 共享密码
 ensure_secret REALITY_SHORTID "$(rand_short)"
 ensure_secret ANYTLS_PASS     "$(rand_psk)"
+
+# The reference AnyTLS server has one password per profile. Revoke it automatically
+# when a device disappears, including the first run after upgrading this tool.
+previous_devices="$(secret_get ANYTLS_DEVICES)"
+if [ -z "$previous_devices" ]; then
+  previous_devices="$(sed -n 's/^REALITY_UUID_\([A-Za-z0-9_]*\)=.*/\1/p' "$SECRETS_FILE")"
+fi
+rotated=false
+for old_device in $previous_devices; do
+  case " ${DEVICES:-mac iphone} " in
+    *" $old_device "*) ;;
+    *)
+      if [ "$rotated" = "false" ]; then
+        setkv ANYTLS_PASS "$(rand_psk)"
+        warn "设备列表有移除：已自动轮换此 profile 的 AnyTLS 密码；部署后请在剩余设备导入新 YAML"
+        rotated=true
+      fi
+      removed_tmp="$(mktemp "$STATE_DIR/.revoked.XXXXXX")"
+      grep -vE "^(REALITY_UUID|HY2_PASS|CDN_UUID|WARP_REALITY_UUID)_${old_device}=" "$SECRETS_FILE" > "$removed_tmp" || true
+      mv "$removed_tmp" "$SECRETS_FILE"
+      chmod 600 "$SECRETS_FILE"
+      ;;
+  esac
+done
+setkv ANYTLS_DEVICES "${DEVICES:-mac iphone}"
 
 # 每设备独立 Reality UUID 与 Hysteria2 密码（可单独作废）
 for d in ${DEVICES:-mac iphone}; do
@@ -77,8 +108,4 @@ if [ "${HY2_OBFS_ENABLE:-false}" = "true" ]; then
   ensure_secret HY2_OBFS_PASSWORD "$(rand_psk)"
 fi
 
-if [ "${HY2_ACME_ENABLE:-false}" = "true" ] && [ -z "$(secret_get HY2_ACME_DNS_TOKEN)" ]; then
-  warn "HY2_ACME_ENABLE=true 但缺 HY2_ACME_DNS_TOKEN；请把 Cloudflare DNS API token 写入 .secrets.env 后重跑"
-fi
-
-ok "密钥就绪（已写入 .secrets.env）"
+ok "密钥由工具自动管理；位置：${SECRETS_FILE}（无需记忆，不显示密码）"

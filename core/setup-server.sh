@@ -1,8 +1,13 @@
 #!/usr/bin/env bash
-# Runs ON the GCP VM. Reads /tmp/server-env.sh for credentials, installs
+# Runs on the target VPS/VM. Reads the supplied temporary environment, installs
 # Xray (VLESS+Reality), Hysteria2, AnyTLS, and optional Cloudflare WARP, then prints
 # REALITY_PUBLIC_KEY=<key> on stdout so the local deployer can pick it up.
 set -euo pipefail
+if [ "$(id -u)" -ne 0 ]; then
+  exec sudo bash "$0" "$@"
+fi
+exec 9>/run/lock/network-node-deploy.lock
+flock -n 9 || { echo "另一项部署正在运行；请稍后重试" >&2; exit 1; }
 export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -11,6 +16,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENV_FILE="${1:-/tmp/server-env.sh}"
 # shellcheck disable=SC1090
 . "$ENV_FILE"
+umask 077
 XRAY_VERSION="${XRAY_VERSION:-v26.3.27}"
 HYSTERIA_VERSION="${HYSTERIA_VERSION:-app/v2.10.0}"
 ANYTLS_VERSION="${ANYTLS_VERSION:-0.0.13}"
@@ -81,12 +87,9 @@ WARP_PACKAGES=""
 [ "$WARP_ENABLE" = "true" ] && WARP_PACKAGES="gnupg"
 sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq curl unzip xz-utils openssl $WARP_PACKAGES
 
-# Fixed /tmp names can be owned by a different gcloud SSH user after an
-# interrupted deployment. Remove only this installer's known artifacts before
-# downloading so a later profile rebuild cannot fail with curl exit 23.
-sudo rm -f /tmp/xray.zip /tmp/hysteria /tmp/anytls.zip \
-  /tmp/cloudflared /tmp/cloudflare-warp-archive-keyring.gpg /tmp/hy2.key
-sudo rm -rf /tmp/anytls-extract
+INSTALL_TMP="$(mktemp -d)"
+trap 'rm -rf "$INSTALL_TMP"' EXIT
+export NETWORK_NODE_DOWNLOAD_CACHE=/var/cache/network-node/releases
 
 ARCH="$(uname -m)"
 
@@ -96,10 +99,10 @@ case "$ARCH" in
   aarch64) XRAY_ZIP="Xray-linux-arm64-v8a.zip" ;;
   *) echo "Unsupported arch: $ARCH"; exit 1 ;;
 esac
-download_file /tmp/xray.zip \
+download_release "${INSTALL_TMP}/xray.zip" \
   "https://github.com/XTLS/Xray-core/releases/download/${XRAY_VERSION}/${XRAY_ZIP}"
-sudo unzip -oq /tmp/xray.zip -d /usr/local/bin xray
-sudo chmod 0755 /usr/local/bin/xray
+sudo unzip -oq "${INSTALL_TMP}/xray.zip" -d "$INSTALL_TMP" xray
+install_binary "$INSTALL_TMP/xray" /usr/local/bin/xray
 print_first_line /usr/local/bin/xray version
 
 echo "=== [4/8] Installing Hysteria2 ==="
@@ -107,9 +110,9 @@ case "$ARCH" in
   x86_64)  HY2_BIN="hysteria-linux-amd64" ;;
   aarch64) HY2_BIN="hysteria-linux-arm64" ;;
 esac
-download_file /tmp/hysteria \
+download_release "${INSTALL_TMP}/hysteria" \
   "https://github.com/apernet/hysteria/releases/download/${HYSTERIA_VERSION}/${HY2_BIN}"
-sudo install -m 0755 /tmp/hysteria /usr/local/bin/hysteria
+install_binary "${INSTALL_TMP}/hysteria" /usr/local/bin/hysteria
 print_first_line /usr/local/bin/hysteria version
 
 echo "=== [5/8] Installing AnyTLS ==="
@@ -119,11 +122,11 @@ case "$ARCH" in
 esac
 AT_VER="$ANYTLS_VERSION"
 [ -n "$AT_VER" ] || { echo "ANYTLS_VERSION 不能为空"; exit 1; }
-download_file /tmp/anytls.zip \
+download_release "${INSTALL_TMP}/anytls.zip" \
   "https://github.com/anytls/anytls-go/releases/download/v${AT_VER}/anytls_${AT_VER}_linux_${AT_ARCH}.zip"
-sudo rm -rf /tmp/anytls-extract
-sudo unzip -oq /tmp/anytls.zip -d /tmp/anytls-extract
-sudo install -m 0755 /tmp/anytls-extract/anytls-server /usr/local/bin/anytls-server
+sudo rm -rf "${INSTALL_TMP}/anytls-extract"
+sudo unzip -oq "${INSTALL_TMP}/anytls.zip" -d "${INSTALL_TMP}/anytls-extract"
+install_binary "${INSTALL_TMP}/anytls-extract/anytls-server" /usr/local/bin/anytls-server
 echo "anytls-server v${AT_VER} installed"
 
 if [ "${CDN_ENABLE:-false}" = "true" ]; then
@@ -132,17 +135,17 @@ if [ "${CDN_ENABLE:-false}" = "true" ]; then
     x86_64)  CF_BIN="cloudflared-linux-amd64" ;;
     aarch64) CF_BIN="cloudflared-linux-arm64" ;;
   esac
-  download_file /tmp/cloudflared \
+  download_release "${INSTALL_TMP}/cloudflared" \
     "https://github.com/cloudflare/cloudflared/releases/download/${CLOUDFLARED_VERSION}/${CF_BIN}"
-  sudo install -m 0755 /tmp/cloudflared /usr/local/bin/cloudflared
+  install_binary "${INSTALL_TMP}/cloudflared" /usr/local/bin/cloudflared
   print_first_line /usr/local/bin/cloudflared --version
 fi
 
 if [ "$WARP_ENABLE" = "true" ]; then
   echo "=== [5c] Installing Cloudflare WARP proxy ==="
   curl -fsSL https://pkg.cloudflareclient.com/pubkey.gpg \
-    | gpg --yes --dearmor --output /tmp/cloudflare-warp-archive-keyring.gpg
-  sudo install -m 0644 /tmp/cloudflare-warp-archive-keyring.gpg \
+    | gpg --yes --dearmor --output "${INSTALL_TMP}/cloudflare-warp-archive-keyring.gpg"
+  sudo install -m 0644 "${INSTALL_TMP}/cloudflare-warp-archive-keyring.gpg" \
     /usr/share/keyrings/cloudflare-warp-archive-keyring.gpg
   echo 'deb [signed-by=/usr/share/keyrings/cloudflare-warp-archive-keyring.gpg] https://pkg.cloudflareclient.com/ bookworm main' \
     | sudo tee /etc/apt/sources.list.d/cloudflare-client.list > /dev/null
@@ -314,8 +317,8 @@ if [ "$WARP_ENABLE" = "true" ]; then
   }'
 fi
 
-sudo mkdir -p /usr/local/etc/xray
-sudo tee /usr/local/etc/xray/config.json > /dev/null <<JSON
+sudo install -d -o root -g xray -m 750 /usr/local/etc/xray
+sudo tee "$INSTALL_TMP/xray-config.json" > /dev/null <<JSON
 {
   "log": {"loglevel": "warning"},
   "inbounds": [${XRAY_INBOUNDS}
@@ -323,9 +326,12 @@ sudo tee /usr/local/etc/xray/config.json > /dev/null <<JSON
   "outbounds": [${XRAY_OUTBOUNDS}]${XRAY_ROUTING}
 }
 JSON
-sudo chown root:xray /usr/local/etc/xray/config.json
-sudo chmod 640 /usr/local/etc/xray/config.json
-sudo /usr/local/bin/xray run -test -c /usr/local/etc/xray/config.json
+sudo install -o root -g xray -m 640 "$INSTALL_TMP/xray-config.json" /usr/local/etc/xray/config.new.json
+sudo -u xray /usr/local/bin/xray run -test -c /usr/local/etc/xray/config.new.json
+if [ -f /usr/local/etc/xray/config.json ]; then
+  sudo cp -p /usr/local/etc/xray/config.json /usr/local/etc/xray/config.json.previous
+fi
+sudo mv /usr/local/etc/xray/config.new.json /usr/local/etc/xray/config.json
 
 sudo mkdir -p /etc/hysteria
 HY2_TLS_BLOCK=""
@@ -333,6 +339,7 @@ HY2_ACME_BLOCK=""
 if [ "$HY2_ACME_ENABLE" = "true" ]; then
   HY2_ACME_BLOCK="
 acme:
+  dir: /var/lib/hysteria/acme
   domains:
     - ${HY2_ACME_DOMAIN}
   email: ${HY2_ACME_EMAIL}
@@ -343,10 +350,10 @@ acme:
       cloudflare_api_token: \"${HY2_ACME_DNS_TOKEN}\""
 else
   if [ ! -f /etc/hysteria/cert.crt ] || [ ! -f /etc/hysteria/cert.key ]; then
-    sudo openssl ecparam -genkey -name prime256v1 -out /tmp/hy2.key >/dev/null 2>&1
-    sudo openssl req -new -x509 -days 3650 -key /tmp/hy2.key \
+    sudo openssl ecparam -genkey -name prime256v1 -out "${INSTALL_TMP}/hy2.key" >/dev/null 2>&1
+    sudo openssl req -new -x509 -days 3650 -key "${INSTALL_TMP}/hy2.key" \
       -out /etc/hysteria/cert.crt -subj "/CN=${HY2_SNI}" >/dev/null 2>&1
-    sudo mv /tmp/hy2.key /etc/hysteria/cert.key
+    sudo mv "${INSTALL_TMP}/hy2.key" /etc/hysteria/cert.key
   fi
   sudo chown root:hysteria /etc/hysteria/cert.crt /etc/hysteria/cert.key
   sudo chmod 640 /etc/hysteria/cert.crt /etc/hysteria/cert.key
@@ -458,6 +465,8 @@ ProtectSystem=strict
 ProtectHome=true
 PrivateTmp=true
 ReadOnlyPaths=/etc/hysteria
+StateDirectory=hysteria
+StateDirectoryMode=0700
 
 [Install]
 WantedBy=multi-user.target
@@ -547,7 +556,7 @@ Wants=network-online.target
 [Service]
 Type=simple
 EnvironmentFile=/etc/cloudflared/env
-ExecStart=/usr/local/bin/cloudflared --no-autoupdate tunnel run
+ExecStart=/usr/local/bin/cloudflared --no-autoupdate tunnel --metrics 127.0.0.1:20241 run
 Restart=on-failure
 RestartSec=5
 NoNewPrivileges=true
@@ -583,15 +592,68 @@ for service in $PROXY_SERVICES $CDN_SERVICES $WARP_SERVICES; do
   fi
 done
 
+if [ "${CDN_ENABLE:-false}" = "true" ]; then
+  echo "=== Waiting for Cloudflare Tunnel connections ==="
+  tunnel_ready=false
+  for attempt in $(seq 1 30); do
+    if curl -fsS --connect-timeout 1 --max-time 2 http://127.0.0.1:20241/metrics \
+      | awk '/^cloudflared_tunnel_ha_connections(\{| )/ {if ($NF > 0) ready=1} END {exit !ready}'; then
+      tunnel_ready=true
+      break
+    fi
+    sleep 2
+  done
+  [ "$tunnel_ready" = true ] || { echo "cloudflared 在运行，但未建立可用 Tunnel 连接" >&2; exit 1; }
+fi
+
 echo "=== [8/8] Hardening (SSH + auto-updates) ==="
 sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq unattended-upgrades
 sudo dpkg-reconfigure -f noninteractive unattended-upgrades || true
-sudo sed -i \
-  -e 's/^#*PasswordAuthentication.*/PasswordAuthentication no/' \
-  -e 's/^#*PermitRootLogin.*/PermitRootLogin no/' \
-  -e 's/^#*ChallengeResponseAuthentication.*/ChallengeResponseAuthentication no/' \
-  /etc/ssh/sshd_config
-sudo systemctl reload ssh || sudo systemctl reload sshd || true
+sudo mkdir -p /etc/ssh/sshd_config.d
+sudo cp -p /etc/ssh/sshd_config "$INSTALL_TMP/sshd_config.previous"
+SSH_FRAGMENT=/etc/ssh/sshd_config.d/00-network-node.conf
+if [ -f "$SSH_FRAGMENT" ]; then
+  sudo cp -p "$SSH_FRAGMENT" "$INSTALL_TMP/ssh-fragment.previous"
+fi
+sudo tee "$SSH_FRAGMENT" >/dev/null <<'SSHCONF'
+PasswordAuthentication no
+PermitRootLogin no
+KbdInteractiveAuthentication no
+PubkeyAuthentication yes
+SSHCONF
+# Put our explicit include first; a later distro wildcard include is harmless.
+{ printf 'Include %s\n' "$SSH_FRAGMENT"; sudo sed '\|^Include /etc/ssh/sshd_config.d/00-network-node.conf$|d' /etc/ssh/sshd_config; } > "$INSTALL_TMP/sshd_config"
+sudo install -m 600 "$INSTALL_TMP/sshd_config" /etc/ssh/sshd_config
+restore_ssh_config() {
+  sudo cp -p "$INSTALL_TMP/sshd_config.previous" /etc/ssh/sshd_config
+  if [ -f "$INSTALL_TMP/ssh-fragment.previous" ]; then
+    sudo cp -p "$INSTALL_TMP/ssh-fragment.previous" "$SSH_FRAGMENT"
+  else
+    sudo rm -f "$SSH_FRAGMENT"
+  fi
+}
+if ! sudo /usr/sbin/sshd -t; then
+  restore_ssh_config
+  echo "SSH 配置无效；已恢复原配置，未 reload" >&2
+  exit 1
+fi
+if ! SSH_EFFECTIVE="$(sudo /usr/sbin/sshd -T)"; then
+  restore_ssh_config
+  echo "无法检查 SSH 生效配置；已恢复原配置，未 reload" >&2
+  exit 1
+fi
+for setting in 'passwordauthentication no' 'permitrootlogin no' 'kbdinteractiveauthentication no' 'pubkeyauthentication yes'; do
+  if ! printf '%s\n' "$SSH_EFFECTIVE" | grep -Fx "$setting" >/dev/null; then
+    restore_ssh_config
+    echo "SSH 加固未生效；已恢复原配置" >&2
+    exit 1
+  fi
+done
+if ! sudo systemctl reload ssh && ! sudo systemctl reload sshd; then
+  restore_ssh_config
+  echo "SSH reload 失败；已恢复配置，请通过控制台检查" >&2
+  exit 1
+fi
 
 echo ""
 echo "=== Listening sockets ==="
@@ -608,4 +670,8 @@ fi
 # machine-readable handoff line — local deployer greps this
 echo ""
 echo "REALITY_PUBLIC_KEY=${REALITY_PUBLIC}"
+if [ "$HY2_ACME_ENABLE" != "true" ]; then
+  HY2_FINGERPRINT="$(sudo openssl x509 -in /etc/hysteria/cert.crt -noout -fingerprint -sha256 | cut -d= -f2 | tr -d ':' | tr 'A-F' 'a-f')"
+  echo "HY2_CERT_SHA256=${HY2_FINGERPRINT}"
+fi
 echo "=== DONE ==="

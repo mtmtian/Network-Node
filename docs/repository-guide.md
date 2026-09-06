@@ -33,8 +33,11 @@ docs/                          架构、排障和运维说明
 | `deploy.sh` | 编排共享部署流程，调用 provider 和客户端生成器 |
 | `cloudflare.sh` | 创建/复用 Tunnel、配置 Ingress、写入 CNAME 和连接 Token |
 | `setup-server.sh` | 在远端安装 Xray、Hysteria2、AnyTLS、cloudflared 和 systemd 服务 |
-| `download.sh` | 远端二进制下载、重试和超时 |
-| `gen-clash.py` | 每个设备生成一份 Stash-first、Mihomo-compatible YAML |
+| `download.sh` | 下载、SHA256 校验、缓存和二进制替换 |
+| `gen-clash.py` | 每设备生成指定 Stash/Mihomo 目标的节点配置 |
+| `settings.py` | 统一字面值解析、校验和 SSH 连接设置保存 |
+| `client.yaml.tmpl` / `client_policy.py` | 共享规则、严格/日常分流与客户端字段差异 |
+| `client_output.py` | 精确输出归属、写入锁与文件替换 |
 
 ## 部署路径
 
@@ -97,11 +100,11 @@ US-CDN      → cdn.example.com → Cloudflare → Tunnel → VPS localhost:8080
 - `CDN_ONLY=false` 时，直连节点继续保留，适合先灰度验证 CDN。
 - `CDN_ONLY=true` 时，服务端关闭 Reality/Hysteria2/AnyTLS 直连入口，只保留 Cloudflare WS；切换前必须重新生成并导入 YAML。
 - `WARP_ENABLE=true` 与 `CDN_ONLY=true` 互斥。
-- `🛟 自动故障切换`、`⚡ 自动测速` 只是客户端策略组，不是额外的服务器节点。
-- `PRIVACY_MODE=true`（默认）让 `🇨🇳 国内流量` 首次默认走代理；客户端可手动切到 `DIRECT`，`false` 则让该组首次默认直连。直连时，`geosite:cn` 域名使用阿里云 / 腾讯云的加密 DoH，避免明文 DNS 和海外解析造成的 CDN 绕路；国内 DoH 服务商仍能看到查询出口 IP。其他域名继续使用经代理路由的 Cloudflare / Google DoH。局域网与原有 Apple/Spotify 规则不受影响。
-- CN 判定依次使用 MetaCubeX `cn` 域名集、`cn-ip` 地址集和 Mihomo `GEOIP,CN` 兜底；AI、Google、Apple、Telegram、广告等更高优先级规则先匹配，`private`/LAN 则始终固定直连。
-- `🤖 AI 隐私出口` 只使用共享 Xray IPv4 出口，按 Reality → CDN（启用时）故障切换；STUN 同组且不受 `PRIVACY_MODE` 影响，避免 AI HTTP 与 WebRTC UDP 因双栈或 WARP 显示不同地址。
-- AI 域名使用 MetaCubeX `category-ai-!cn`；Anthropic/Claude 的核心域名、认证/CDN、监控与第三方组件、Anthropic IP 段/ASN、NTP 和 STUN 使用高优先级静态规则，置于广告拦截及所有直连规则之前。`IP-ASN` 需要客户端加载 ASN 数据库，NTP 需要代理节点支持 UDP；中国 AI 域名仍不在该集合内。
+- 默认 `AI_STRICT_MODE=false`、`PRIVACY_MODE=false`：普通国内流量直连，AI 核心服务及其已知依赖固定 AI 组。AI 规则先于广告和国内域名/IP 规则，未匹配的其他流量默认代理。
+- AI 组按 Reality → CDN（启用时）切换，共享 Xray IPv4 出口。普通海外流量可使用 HY2/AnyTLS 故障切换，WARP 仅供手动选择。Apple 基础服务与 Spotify 保留原直连策略。
+- `PRIVACY_MODE` 决定国内组首次选择；国内 DoH 解析器 IP 显式关联国内组，DNS 连接随该组选择，默认直连。其他业务 DNS 固定走 AI 组；节点域名独立加密解析。
+- 静态内网规则先于 NTP/STUN；既有 AI 监控、认证依赖保护保留，并补充 OpenAI 官方网络白名单。未知第三方请求无法可靠归因到具体页面，漏网依赖需要补精确规则。
+- `AI_STRICT_MODE=true` 仅为可选的全公网 AI 路由：国内也代理，只保留 AI/广告两个策略组及两个动态规则集，AI 线路不可用时公网业务失败。日常使用保持 false。
 
 ## Profile 和文件安全边界
 
@@ -110,7 +113,8 @@ US-CDN      → cdn.example.com → Cloudflare → Tunnel → VPS localhost:8080
 ```text
 profiles/<profile>/
 ├── deploy.conf       # 本机部署参数
-├── .secrets.env      # 端口、UUID、密码、Token
+├── .secrets.env      # 工具自动管理的端口、UUID、密码、Token
+├── connection.conf   # SSH 连接参数，无需每次重填
 └── ssh/              # 本机 SSH 私钥
 ```
 
@@ -118,7 +122,9 @@ profiles/<profile>/
 
 公共代码只应依赖环境变量和 profile 状态，不要把某台服务器的 IP、域名、Token 或 SSH 文件写进 `core/`、`providers/`、`README.md` 或测试样例。
 
-客户端文件默认使用 `<profile>-<device>.yaml` 命名。如果某台服务器需要更短的设备文件名，可在该 profile 的 `deploy.conf` 设置 `CLIENT_FILE_PREFIX`；前缀和设备名只允许字母、数字、点、下划线和连字符。生成器先验证全部设备凭据并原子替换每份 YAML，全部新文件就绪后才清理当前前缀的旧文件；这只改变 `clash-configs/` 下的文件前缀和清理范围，不改变 profile 状态目录，也不会让不同服务器共用凭据。
+客户端文件默认使用 `<profile>-<device>.yaml` 命名，`CLIENT_FILE_PREFIX` 可指定独立前缀。设备 ID 只支持 1-64 位字母、数字、下划线；前缀还可包含点和连字符。生成器验证全部设备后写入，以精确归属清单清理已登记且未手工修改的旧文件；不会用短前缀通配符删除长前缀 profile 的输出。未知旧文件保留。
+
+密码不需要记忆。`python3 node.py status --profile <profile>` 只显示存储位置。移除设备并部署会自动轮换 profile 共享的 AnyTLS 密码，删除移除设备的其他凭据；剩余设备需重新导入新 YAML。仅 `render` 不触发轮换或服务器撤销。
 
 ### 交接时的文件边界
 
@@ -135,16 +141,16 @@ profiles/<profile>/
 ### 重跑同一台服务器
 
 ```bash
-./deploy-vps.sh --profile <profile> \
-  --ssh-key "$PWD/profiles/<profile>/ssh/id_rsa.pem"
+./deploy-vps.sh --profile <profile>
 ```
 
-重跑会复用本地凭据和已有管理员。只有修改服务端参数、协议凭据或组件版本时，才需要重跑；只改客户端规则时不需要重启服务器。
+重跑会复用本地凭据、已有管理员和已保存的 connection.conf；旧 profile 未保存过连接设置时，首次仍需传入 SSH 参数。只有修改服务端参数、协议凭据或组件版本时，才需要重跑；只改客户端规则时不需要重启服务器。
 
 ### 只重新生成客户端 YAML
 
 ```bash
-NETWORK_NODE_PROFILE=<profile> python3 core/gen-clash.py
+python3 node.py render --profile <profile>
+python3 node.py check --profile <profile>
 ```
 
 ### 启用 CDN
@@ -171,7 +177,9 @@ NETWORK_NODE_PROFILE=<profile> python3 core/gen-clash.py
 
 ```bash
 python3 -m unittest discover -s tests -p 'test_*.py' -v
-bash -n deploy.sh deploy-gcp.sh deploy-vps.sh core/*.sh providers/*.sh
+for script in deploy.sh deploy-gcp.sh deploy-vps.sh core/*.sh providers/*.sh; do
+  bash -n "$script" || exit
+done
 git diff --check
 git ls-files profiles
 ```

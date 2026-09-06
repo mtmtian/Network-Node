@@ -35,7 +35,20 @@ jobs:
         run: test -z "$(git ls-files profiles)"
 
       - name: Check shell syntax
-        run: bash -n deploy.sh deploy-gcp.sh deploy-vps.sh core/*.sh providers/*.sh
+        run: |
+          for script in deploy.sh deploy-gcp.sh deploy-vps.sh core/*.sh providers/*.sh; do
+            bash -n "$script"
+          done
 
       - name: Run unit tests
         run: python3 -m unittest discover -s tests -p 'test_*.py' -v
+
+      - name: Validate with pinned Mihomo
+        run: |
+          curl --fail --location --retry 3 --max-time 120 \
+            https://github.com/MetaCubeX/mihomo/releases/download/v1.19.30/mihomo-linux-amd64-compatible-v1.19.30.gz \
+            --output "$RUNNER_TEMP/mihomo.gz"
+          echo "db214c7a2517e63c150d123178d16d102e03a241ccdae4e5e07ffbe9cf56c6f9  $RUNNER_TEMP/mihomo.gz" | sha256sum --check
+          gzip --decompress "$RUNNER_TEMP/mihomo.gz"
+          chmod 755 "$RUNNER_TEMP/mihomo"
+          MIHOMO_BIN="$RUNNER_TEMP/mihomo" python3 -m unittest discover -s tests -p 'test_mihomo_config.py' -v

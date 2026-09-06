@@ -1,7 +1,27 @@
 # ── 复制本文件为 deploy.conf 后按需修改（任一部署入口首次运行会自动创建）──
+# 本文件只支持字面值 KEY=value、引号和注释；不执行 shell、不展开 $HOME 或命令。
+
+# 停用机器可设为 false：跳过客户端输出，保留 profile 和凭据，不操作服务器。
+CLIENT_CONFIG_ENABLE=true
+
+# 客户端目标：stash（默认）/ mihomo。两者 DNS、HY2、TUN 字段分别生成。
+CLIENT_TARGET=stash
+# 默认日常分流：已知 AI 及其依赖优先走 AI 线路，普通国内流量默认直连。
+# true 为可选严格模式：全部公网固定走同一 VPS 的 Reality/CDN，国内也代理。
+# 严格模式不自动切到 HY2/AnyTLS/WARP；不需要时保持 false。
+AI_STRICT_MODE=false
 
 # GCP 项目 ID（仅 GCP 入口必填）。留空时 deploy-gcp.sh 会读取 gcloud 当前项目并提示确认
 PROJECT_ID=
+# GCP 管理账号。首次配置后自动保存，后续部署不跟随 gcloud 的全局默认账号。
+GCP_ACCOUNT=
+# 可选：本机 GCP 管理请求使用的 HTTP 代理（例如 http://127.0.0.1:7890）。
+# IAP 无法连接、但本机代理可用时填写；不影响服务器出口或客户端分流。
+GCP_HTTP_PROXY=
+# 可选：本机恢复验收强制从物理网卡发起，避免 TUN / fake-IP 制造可达假象。
+# macOS 常用 en0；留空沿用系统路由。CDN 解析经该网卡访问 AliDNS DoH。
+# 只影响 cdn-check、部署后的 CDN 验收和换 IP 的 TCP 验收，不写入设备 YAML。
+PROBE_INTERFACE=
 
 # 区域 / 可用区。Free Tier 免费区：us-west1 / us-central1 / us-east1
 REGION=us-west1
@@ -25,7 +45,7 @@ ANYTLS_PORT=
 
 # Hysteria2 可选增强：端口跳跃 / QUIC 混淆。默认关闭，开启后需要重新生成并导入客户端 YAML。
 # HY2_PORT_RANGE=30000-30010
-# HY2_HOP_INTERVAL=15-30
+# HY2_HOP_INTERVAL=30（整数秒，Stash/Mihomo 均支持；范围仅支持 Mihomo）
 HY2_PORT_RANGE=
 HY2_HOP_INTERVAL=
 HY2_OBFS_ENABLE=false
@@ -45,18 +65,21 @@ HY2_ACME_DNS_PROVIDER=cloudflare
 HY2_UP=
 HY2_DOWN=
 
-# 要生成客户端配置的设备名（空格分隔，可自由增删）
+# 设备 ID：字母、数字、下划线，1-64 位，空格分隔。
+# 移除设备后部署会自动轮换本 profile 的 AnyTLS 密码，剩余设备需重新导入 YAML。
 DEVICES="mac iphone"
 
-# 隐私模式：只决定「🇨🇳 国内流量」组的首次默认选项；true 默认代理，false 默认直连。
-# CN 直连时域名使用国内加密 DoH；其他域名和 STUN 仍走代理。客户端可随时手动切换该组；
-# 局域网与原有 Apple/Spotify 分流保持不变。
-PRIVACY_MODE=true
+# 仅在 AI_STRICT_MODE=false 时生效：决定国内流量组的首次默认选项。
+# true 默认代理，false 默认直连；日常模式的国内域名使用国内加密 DoH。
+# 国内 DoH 解析器 IP 显式关联国内流量组，跟随该组选择；其他业务 DNS 走 AI 出口。
+PRIVACY_MODE=false
 
-# ── Cloudflare CDN 套娃出口（可选）──
-# 开启后多一条出口：客户端 → Cloudflare 边缘 → Cloudflare Tunnel → cloudflared@VM
+# ── Cloudflare CDN 备用入口（可选）──
+# 应对本地网络无法直连 VPS IP；出口仍是同一 VPS，不改变目标网站看到的出口 IP。
+# 开启后多一条入口：客户端 → Cloudflare 边缘 → Cloudflare Tunnel → cloudflared@VM
 # → xray VLESS+WS(127.0.0.1:8080) → 直出。客户端只与 Cloudflare anycast IP 通信，
-# 真实 VM IP 对线路侧不可见。false 时跳过；true 时必须先准备 CF_API_TOKEN，缺失会在改服务器前直接停止。
+# 走 CDN 时线路侧不直连 VM；Reality 优先模式仍会尝试真实 IP。false 时跳过；
+# true 时必须先准备 CF_API_TOKEN，缺失会在改服务器前直接停止。
 CDN_ENABLE=false
 # true 时只生成 Cloudflare WS 节点，并关闭直连代理端口；会失去原生 HY2/AnyTLS 直连能力。
 CDN_ONLY=false
@@ -75,7 +98,7 @@ WARP_ENABLE=false
 WARP_SOCKS_PORT=40000
 WARP_REALITY_PORT=
 
-# 固定服务端组件版本，避免重跑时自动升级造成兼容性漂移。
+# 固定服务端组件版本；升级须同步更新 core/download.sh 中已核验的 SHA256。
 XRAY_VERSION=v26.3.27
 HYSTERIA_VERSION=app/v2.10.0
 ANYTLS_VERSION=0.0.13

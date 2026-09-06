@@ -23,6 +23,9 @@ class GenerateClashConfigTest(unittest.TestCase):
                         "REALITY_SNI=",
                         "DEVICES=mac phone",
                         "CDN_ENABLE=false",
+                        "AI_STRICT_MODE=false",
+                        "PRIVACY_MODE=true",
+                        "CLIENT_TARGET=mihomo",
                     ]
                 )
                 + "\n"
@@ -79,7 +82,7 @@ class GenerateClashConfigTest(unittest.TestCase):
             self.assertIn('    - "tcp://any:53"', mac)
             self.assertIn("  ipv6: false\n  enhanced-mode: fake-ip", mac)
             self.assertIn("  respect-rules: true", mac)
-            self.assertIn("  follow-rule: true", mac)
+            self.assertNotIn("  follow-rule: true", mac)
             self.assertIn("  proxy-server-nameserver:", mac)
             overseas_dns = mac.split("  nameserver:\n", 1)[1].split(
                 "  nameserver-policy:", 1
@@ -269,7 +272,7 @@ class GenerateClashConfigTest(unittest.TestCase):
             self.assertNotIn('name: "US-AnyTLS"', config)
             self.assertNotIn("203.0.113.10", config)
             ai_group = config.split('name: "🤖 AI 隐私出口"', 1)[1].split(
-                'name: "🛟 自动故障切换"', 1
+                '\n  - name:', 1
             )[0]
             self.assertIn("    type: fallback", ai_group)
             self.assertIn('      - "US-CDN"', ai_group)
@@ -307,7 +310,7 @@ class GenerateClashConfigTest(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             config = (root / "clash-configs" / "test-mac.yaml").read_text()
             ai_group = config.split('name: "🤖 AI 隐私出口"', 1)[1].split(
-                'name: "🛟 自动故障切换"', 1
+                '\n  - name:', 1
             )[0]
             self.assertIn("    type: fallback", ai_group)
             reality_index = ai_group.index('      - "US-Reality"')
@@ -322,7 +325,7 @@ class GenerateClashConfigTest(unittest.TestCase):
             root = pathlib.Path(tmp)
             (root / "deploy.conf").write_text(
                 "REALITY_PORT=443\nREALITY_TARGET=1.1.1.1:443\nREALITY_SNI=\n"
-                "DEVICES=mac\nCDN_ENABLE=false\nWARP_ENABLE=true\n"
+                "DEVICES=mac\nCDN_ENABLE=false\nWARP_ENABLE=true\nAI_STRICT_MODE=false\n"
             )
             (root / ".secrets.env").write_text(
                 "STATIC_IP=203.0.113.10\nREALITY_PUBLIC=test-public-key\n"
@@ -400,7 +403,7 @@ class GenerateClashConfigTest(unittest.TestCase):
             (root / "deploy.conf").write_text(
                 "REALITY_PORT=443\nREALITY_TARGET=1.1.1.1:443\nREALITY_SNI=\n"
                 "DEVICES=mac\nCDN_ENABLE=false\nHY2_PORT_RANGE=30000-30010\n"
-                "HY2_HOP_INTERVAL=15-30\nHY2_OBFS_ENABLE=true\n"
+                "HY2_HOP_INTERVAL=15-30\nHY2_OBFS_ENABLE=true\nCLIENT_TARGET=mihomo\n"
                 "HY2_ACME_ENABLE=true\nHY2_ACME_DOMAIN=hy2.example.com\n"
             )
             (root / ".secrets.env").write_text(
@@ -460,7 +463,7 @@ class GenerateClashConfigTest(unittest.TestCase):
             )
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertTrue(unrelated.exists())
-            self.assertFalse(stale.exists())
+            self.assertTrue(stale.exists(), "Unowned legacy outputs must be preserved")
             self.assertTrue((clients / "dmit-mac.yaml").exists())
 
     def test_custom_client_file_prefix_does_not_change_profile_state(self):
@@ -492,7 +495,7 @@ class GenerateClashConfigTest(unittest.TestCase):
                 capture_output=True, check=False,
             )
             self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertFalse(stale.exists())
+            self.assertTrue(stale.exists(), "Unowned legacy outputs must be preserved")
             self.assertTrue(unrelated.exists())
             self.assertTrue((clients / "cstonecloud-mac.yaml").exists())
 

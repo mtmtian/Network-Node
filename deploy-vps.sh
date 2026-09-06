@@ -14,6 +14,7 @@ usage() {
   --host HOST                 已安装 Debian/Ubuntu 且可 SSH 的主机
   --ssh-key PATH              本机 SSH 私钥路径
   --ssh-port PORT             SSH 端口，默认 22
+  --ssh-interface INTERFACE   SSH/SCP 绑定本机网络接口（用于绕过本地 TUN）
   --bootstrap-user USER       首次 root 登录用户，默认 root
   --admin-user USER           部署后的 sudo 用户，默认 mt
   --install-key               若新机只有 root 密码，先交互式安装本机公钥
@@ -49,6 +50,8 @@ while [ "$#" -gt 0 ]; do
       need_value "$@"; VPS_SSH_KEY="$2"; shift 2 ;;
     --ssh-port)
       need_value "$@"; VPS_SSH_PORT="$2"; shift 2 ;;
+    --ssh-interface)
+      need_value "$@"; VPS_SSH_INTERFACE="$2"; shift 2 ;;
     --bootstrap-user)
       need_value "$@"; VPS_BOOTSTRAP_USER="$2"; shift 2 ;;
     --admin-user)
