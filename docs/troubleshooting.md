@@ -23,60 +23,37 @@ When the client reports the node itself as timeout, check the server address fir
 
 ### Checks
 
-Run these locally after loading the GCloud profile state.
+Use the profile-aware read-only check. It pins the account/project and compares
+the reservation's owner, tier and address against the VM and local state without displaying credentials.
 
 ```bash
-set -a
-. profiles/gcloud/deploy.conf
-. profiles/gcloud/.secrets.env
-set +a
+python3 node.py ip-check --profile gcloud
 ```
 
-```bash
-gcloud --project "$PROJECT_ID" compute instances describe "$INSTANCE_NAME" \
-  --zone "$ZONE" \
-  --format="value(networkInterfaces[0].accessConfigs[0].natIP)"
-```
-
-```bash
-grep '^STATIC_IP=' profiles/gcloud/.secrets.env
-```
-
-The two IPs must match.
-
-Then confirm the VM and firewall are healthy.
-
-```bash
-gcloud --project "$PROJECT_ID" compute instances describe "$INSTANCE_NAME" \
-  --zone "$ZONE" \
-  --format="yaml(name,status,tags.items,networkInterfaces[0].accessConfigs[0].natIP)"
-```
-
-```bash
-gcloud --project "$PROJECT_ID" compute firewall-rules list \
-  --filter="name=(allow-proxy allow-iap-ssh)" \
-  --format="table(name,direction,disabled,sourceRanges.list(),allowed[].map().firewall_rule().list(),targetTags.list())"
-```
-
-If you can access the VM over IAP SSH, check systemd services and listeners.
-
-```bash
-gcloud --project "$PROJECT_ID" compute ssh "$INSTANCE_NAME" \
-  --zone "$ZONE" \
-  --tunnel-through-iap \
-  --command "sudo systemctl is-active xray hysteria anytls; sudo ss -tulnp | grep -E 'xray|hysteria|anytls'"
-```
+If the cloud reservation and VM disagree, fix the intended binding first. Re-running
+deployment now stops on this mismatch instead of publishing the unattached reservation.
 
 ### Fix
 
-1. Update `profiles/gcloud/.secrets.env` so `STATIC_IP` matches the VM external IP.
-2. Regenerate GCloud client configs:
+1. When the cloud binding is correct but the local IP is stale, synchronize the IP and regenerate YAML:
 
 ```bash
-NETWORK_NODE_PROFILE=gcloud python3 core/gen-clash.py
+python3 node.py ip-sync --profile gcloud
 ```
 
-3. Re-import the regenerated YAML into the client. Delete the old client profile first if the app caches old proxy entries.
+2. Synchronize distribution copies and reload the regenerated YAML on each device. Verify the active client actually uses the new node configuration.
+
+If the direct IP is blocked from the client network, first test the independent CDN entrance:
+
+```bash
+python3 node.py cdn-check --profile gcloud
+```
+
+This verifies authenticated VLESS traffic through CF and a verified HTTPS target. It does
+not change the GCP egress IP, and OS-level TUN routing can still affect the local test.
+For address replacement, rollback and release of retained addresses, use the
+[GCP recovery commands](../README.md#gcp-ip-故障恢复). Do not delete the old reservation
+before validating the new connection and synchronizing devices.
 
 Restarting the VM is not required when only the generated client YAML is wrong. Re-run the same provider entry point or restart services only when the server-side ports, credentials, or service configs changed.
 
@@ -94,10 +71,9 @@ Restarting the VM is not required when only the generated client YAML is wrong. 
 
 处理方式：
 
-1. 对比 GCP VM 当前外部 IP 和 `profiles/gcloud/.secrets.env` 里的 `STATIC_IP`。
-2. 把 `profiles/gcloud/.secrets.env` 更新为当前 VM IP。
-3. 运行 `NETWORK_NODE_PROFILE=gcloud python3 core/gen-clash.py`。
-4. 在客户端删除旧 profile 后重新导入生成的 YAML。
+1. 运行 `python3 node.py ip-check --profile gcloud`。
+2. 云端绑定正确但本地记录过期时，运行 `python3 node.py ip-sync --profile gcloud`。
+3. 同步 iCloud 等分发副本，并在客户端重新加载、验证实际代理连接。
 
 只修正客户端 YAML 时不需要重启 VM。只有服务端端口、凭据或 systemd 服务配置发生变化时，才需要重跑原平台入口或重启相关服务。
 

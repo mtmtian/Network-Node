@@ -43,7 +43,7 @@ cleanup_deploy_tmp() {
 }
 
 redact_server_output() {
-  sed -E 's/^(REALITY_PUBLIC_KEY=).*/\1[redacted]/'
+  sed -E 's/^(REALITY_PUBLIC_KEY=|HY2_CERT_SHA256=).*/\1[redacted]/'
 }
 
 run_deploy() {
@@ -56,6 +56,12 @@ run_deploy() {
   fi
   provider_configure
   load_conf
+  python3 "$PROJECT_DIR/core/settings.py" validate "$STATE_DIR"
+  # CDN-only must first work from this client network while direct ingress is
+  # still available. A first deployment therefore uses the dual-entry mode.
+  if [ "${CDN_ONLY:-false}" = "true" ]; then
+    python3 "$PROJECT_DIR/core/cdn_probe.py" "$STATE_DIR"
+  fi
   REALITY_TARGET="${REALITY_TARGET:-${REALITY_SNI}:443}"
   export REALITY_TARGET
   if [ "${CDN_ONLY:-false}" = "true" ] && [ "${CDN_ENABLE:-false}" != "true" ]; then
@@ -70,6 +76,9 @@ run_deploy() {
     NETWORK_NODE_STATE_DIR="$STATE_DIR" \
     bash "$PROJECT_DIR/core/secrets.sh"
   load_secrets
+
+  # Validate generated ports/state as well, before any external mutation.
+  python3 "$PROJECT_DIR/core/settings.py" validate "$STATE_DIR"
 
   # Cloudflare setup is local/API-only. Do it before touching the host so a
   # missing permission or unreachable API cannot leave a half-updated server.
@@ -100,8 +109,19 @@ run_deploy() {
   pub="$(echo "$srv_out" | grep '^REALITY_PUBLIC_KEY=' | tail -1 | cut -d= -f2)"
   [ -n "$pub" ] || die "未能取回 Reality 公钥"
   setkv REALITY_PUBLIC "$pub"
+  local cert_fingerprint
+  cert_fingerprint="$(printf '%s\n' "$srv_out" | sed -n 's/^HY2_CERT_SHA256=//p' | tail -1)"
+  if [ -n "$cert_fingerprint" ]; then
+    setkv HY2_CERT_SHA256 "$cert_fingerprint"
+  fi
 
-  say "生成 Clash/Mihomo 配置"
+  if [ "${CDN_ENABLE:-false}" = "true" ]; then
+    say "从本机验证 CDN 的 TLS / WebSocket / VLESS / HTTPS 完整链路"
+    python3 "$PROJECT_DIR/core/cdn_probe.py" "$STATE_DIR" \
+      || die "CDN 端到端验收失败；服务器可能已更新，本次未发布客户端 YAML。请检查后重试"
+  fi
+
+  say "生成目标客户端配置（${CLIENT_TARGET:-stash}）"
     NETWORK_NODE_ROOT="$PROJECT_DIR" \
     NETWORK_NODE_STATE_DIR="$STATE_DIR" \
     NETWORK_NODE_CLIENTS_DIR="$CLIENTS_DIR" \
@@ -124,4 +144,5 @@ run_deploy() {
     echo "  CDN       : $CDN_HOSTNAME"
   fi
   echo "  配置文件  : $CLIENTS_DIR/${CLIENT_FILE_PREFIX:-$PROFILE_NAME}-*.yaml"
+  echo "  凭据位置  : ${SECRETS_FILE}（工具自动管理，无需记忆；不要复制到聊天）"
 }

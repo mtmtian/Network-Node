@@ -24,6 +24,7 @@ class DeployOutputTest(unittest.TestCase):
         self.assertIn("--copy-config-from", result.stdout)
         self.assertIn("--check-only", result.stdout)
         self.assertIn("--install-key", result.stdout)
+        self.assertIn("--ssh-interface", result.stdout)
 
     def test_vps_entrypoint_requires_explicit_profile(self):
         result = subprocess.run(
@@ -110,6 +111,49 @@ class DeployOutputTest(unittest.TestCase):
             )
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("当前为 alpine", result.stderr)
+
+    def test_vps_check_only_binds_ssh_to_requested_interface(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            fake_bin = root / "bin"
+            fake_bin.mkdir()
+            fake_ssh = fake_bin / "ssh"
+            fake_ssh.write_text(
+                "#!/bin/sh\n"
+                "printf '%s\\n' \"$*\" >> \"$SSH_ARGS_LOG\"\n"
+                "case \"$*\" in *mt@*) exit 1 ;; esac\n"
+                "printf 'Debian GNU/Linux 12|x86_64'\n"
+            )
+            fake_ssh.chmod(0o755)
+            private_key = root / "id_ed25519"
+            private_key.write_text("test-only-placeholder\n")
+            ssh_args_log = root / "ssh-args.log"
+            env = os.environ.copy()
+            env["PATH"] = f"{fake_bin}:{env['PATH']}"
+            env["SSH_ARGS_LOG"] = str(ssh_args_log)
+            result = subprocess.run(
+                [
+                    "bash",
+                    str(PROJECT_ROOT / "deploy-vps.sh"),
+                    "--profile",
+                    "cstone-next",
+                    "--host",
+                    "198.51.100.10",
+                    "--ssh-key",
+                    str(private_key),
+                    "--ssh-interface",
+                    "en0",
+                    "--check-only",
+                ],
+                env=env,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+            calls = ssh_args_log.read_text().splitlines()
+            self.assertGreaterEqual(len(calls), 2)
+            self.assertTrue(all("BindInterface=en0" in call for call in calls))
 
     def test_check_only_rejects_interactive_key_install(self):
         result = subprocess.run(
@@ -210,10 +254,12 @@ class DeployOutputTest(unittest.TestCase):
                 VPS_HOST=203.0.113.10
                 mkdir -p "$PROJECT_DIR/core" "$PROJECT_DIR/providers" "$PROJECT_DIR/config"
                 cp {shlex.quote(str(PROJECT_ROOT / 'core' / 'common.sh'))} "$PROJECT_DIR/core/common.sh"
+                cp {shlex.quote(str(PROJECT_ROOT / 'core' / 'settings.py'))} "$PROJECT_DIR/core/settings.py"
                 cp {shlex.quote(str(PROJECT_ROOT / 'providers' / 'vps.sh'))} "$PROJECT_DIR/providers/vps.sh"
                 cp {shlex.quote(str(PROJECT_ROOT / 'config' / 'deploy.conf.example'))} "$PROJECT_DIR/config/deploy.conf.example"
                 . "$PROJECT_DIR/core/common.sh"
                 . "$PROJECT_DIR/providers/vps.sh"
+                VPS_SSH_PORT=22 VPS_SSH_KEY=/test/key VPS_ADMIN_USER=mt VPS_BOOTSTRAP_USER=root VPS_SSH_INTERFACE=
                 provider_configure >/dev/null
                 grep -Fx 'PROJECT_ID=vps' "$CONF_FILE" >/dev/null
                 grep -Fx 'DEVICES=mac' "$CONF_FILE" >/dev/null
@@ -355,6 +401,13 @@ class DeployOutputTest(unittest.TestCase):
                 "printf 'CF_TUNNEL_TOKEN=test-tunnel\\n' >> \"$NETWORK_NODE_STATE_DIR/.secrets.env\"\n"
             )
             fake_cf.chmod(0o755)
+            (root / 'core/cdn_probe.py').write_text(
+                'import pathlib, sys\n'
+                'state = pathlib.Path(sys.argv[1])\n'
+                'assert (state / "cf-profile").exists()\n'
+                'assert "REALITY_PUBLIC=" in (state / ".secrets.env").read_text()\n'
+                '(state / "cdn-probed").touch()\n'
+            )
             command = textwrap.dedent(
                 f"""
                 set -euo pipefail
@@ -389,6 +442,7 @@ EOF
                 provider_print_summary() {{ :; }}
                 run_deploy >/dev/null
                 test -f "$STATE_DIR/cf-profile"
+                test -f "$STATE_DIR/cdn-probed"
                 test -f "$PROJECT_DIR/clash-configs/cdn-test-mac.yaml"
                 """
             )

@@ -19,6 +19,7 @@ need() {  # need CMD HINT
 need gcloud   "安装方式见 https://cloud.google.com/sdk/docs/install"
 need python3  "macOS: brew install python3 ；Debian/Ubuntu: sudo apt install python3"
 need openssl  "通常系统自带；缺失请用包管理器安装"
+need ssh-keygen "通常由 OpenSSH 提供"
 
 # uuid 来源：uuidgen 或 python3 均可
 if command -v uuidgen >/dev/null 2>&1; then
@@ -29,12 +30,13 @@ fi
 
 [ "$missing" -eq 0 ] || die "请先安装上述缺失的依赖，再重新运行 ./deploy-gcp.sh"
 
-# gcloud 登录态
-if gcloud auth list --filter=status:ACTIVE --format='value(account)' 2>/dev/null | grep -q .; then
-  acct="$(gcloud auth list --filter=status:ACTIVE --format='value(account)' | head -1)"
-  ok "gcloud 已登录：$acct"
-else
-  die "gcloud 未登录。请先运行：gcloud auth login"
+# A saved account must take precedence over the workstation's active account.
+load_conf
+acct="${GCP_ACCOUNT:-$(gcloud config get-value account 2>/dev/null || true)}"
+[ -n "$acct" ] && [ "$acct" != '(unset)' ] || die "请先登录 gcloud，并在 deploy.conf 设置 GCP_ACCOUNT"
+if ! gcloud --account "$acct" auth print-access-token >/dev/null 2>&1; then
+  die "GCP_ACCOUNT 的授权不可用，请重新登录该账号后重试"
 fi
+ok "指定 GCP 账号的授权有效"
 
 ok "预检通过"

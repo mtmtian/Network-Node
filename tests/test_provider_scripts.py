@@ -12,7 +12,7 @@ class ProviderScriptTest(unittest.TestCase):
         gcp = (PROJECT_ROOT / "providers" / "gcp-provision.sh").read_text()
         vps = (PROJECT_ROOT / "providers" / "vps.sh").read_text()
         self.assertIn('FW_RULES="${FW_RULES},tcp:${WARP_REALITY_PORT}"', gcp)
-        self.assertIn('sudo ufw allow "${WARP_REALITY_PORT}/tcp"', vps)
+        self.assertIn('printf \'%s/tcp\\n\' "$WARP_REALITY_PORT" >> "$expected"', vps)
 
     def test_xray_direct_outbounds_prefer_ipv4(self):
         setup = (PROJECT_ROOT / "core" / "setup-server.sh").read_text()
@@ -22,15 +22,15 @@ class ProviderScriptTest(unittest.TestCase):
         )
         self.assertNotIn('"domainStrategy": "UseIPv6v4"', setup)
 
-    def test_server_setup_removes_cross_user_installer_cache(self):
+    def test_server_setup_uses_isolated_installer_directory(self):
         setup = (PROJECT_ROOT / "core" / "setup-server.sh").read_text()
-        cleanup = "sudo rm -f /tmp/xray.zip /tmp/hysteria /tmp/anytls.zip"
-        self.assertIn(cleanup, setup)
-        self.assertLess(setup.index(cleanup), setup.index("download_file /tmp/xray.zip"))
+        self.assertIn('INSTALL_TMP="$(mktemp -d)"', setup)
+        self.assertNotIn('download_file /tmp/', setup)
+        self.assertIn('flock -n 9', setup)
 
     def test_gcloud_retry_propagates_final_failure(self):
         script = (PROJECT_ROOT / "providers" / "gcp-provision.sh").read_text()
-        retry_function = "\n".join(script.splitlines()[17:34])
+        retry_function = script[script.index('gcloud_retry() {'):script.index('\n}', script.index('gcloud_retry() {')) + 2]
         command = f"""
         set -euo pipefail
         PROJECT_DIR={str(PROJECT_ROOT)!r}

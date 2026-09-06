@@ -3,10 +3,16 @@
 PROVIDER_TITLE="GCP 代理一键部署"
 PROVIDER_DESCRIPTION="provider=GCP"
 
-provider_init() { :; }
+provider_init() {
+  load_conf
+  if [ -n "${GCP_HTTP_PROXY:-}" ]; then
+    export HTTPS_PROXY="$GCP_HTTP_PROXY" HTTP_PROXY="$GCP_HTTP_PROXY"
+  fi
+}
 
 provider_preflight() {
-  bash "$PROJECT_DIR/providers/gcp-preflight.sh"
+  PROFILE_NAME="$PROFILE_NAME" NETWORK_NODE_STATE_DIR="$STATE_DIR" \
+    bash "$PROJECT_DIR/providers/gcp-preflight.sh"
 }
 
 provider_configure() {
@@ -31,30 +37,56 @@ provider_configure() {
         -e "s|^ZONE=.*|ZONE=${zone}|" \
         -e "s|^DEVICES=.*|DEVICES=\"${devs}\"|" \
         "$CONFIG_TEMPLATE" > "$CONF_FILE"
-    ok "已写入 profiles/gcloud/deploy.conf"
+    chmod 600 "$CONF_FILE"
+    ok "已创建 GCP profile 配置"
   fi
   load_conf
+  GCP_ACCOUNT="${GCP_ACCOUNT:-$(gcloud config get-value account 2>/dev/null || true)}"
+  [ -n "$GCP_ACCOUNT" ] && [ "$GCP_ACCOUNT" != '(unset)' ] || die "缺少 GCP_ACCOUNT"
+  export GCP_ACCOUNT
+  # Pin the account on the first successful setup; later runs ignore global switches.
+  python3 - "$CONF_FILE" <<'PY'
+import os, pathlib, re, shlex, sys
+path = pathlib.Path(sys.argv[1])
+text = path.read_text()
+line = 'GCP_ACCOUNT=' + shlex.quote(os.environ['GCP_ACCOUNT'])
+text = re.sub(r'^GCP_ACCOUNT=.*$', line, text, flags=re.M) if re.search(r'^GCP_ACCOUNT=', text, re.M) else text.rstrip() + '\n' + line + '\n'
+path.write_text(text)
+path.chmod(0o600)
+PY
   PROVIDER_DESCRIPTION="provider=GCP  项目=$PROJECT_ID  区域=$REGION"
 }
 
 provider_provision() {
-  bash "$PROJECT_DIR/providers/gcp-provision.sh"
+  PROFILE_NAME="$PROFILE_NAME" NETWORK_NODE_STATE_DIR="$STATE_DIR" \
+    bash "$PROJECT_DIR/providers/gcp-provision.sh"
 }
 
 provider_install() {
-  local setup_script="$1" download_script="$2" env_file="$3" attempt scp_ok=0
-  local -a gc=(gcloud --project "$PROJECT_ID" --quiet)
+  local setup_script="$1" download_script="$2" env_file="$3" attempt remote_dir=""
+  : "${GCP_ACCOUNT:?deploy.conf 缺少 GCP_ACCOUNT}"
+  local -a gc=(gcloud --account "$GCP_ACCOUNT" --project "$PROJECT_ID" --quiet)
+  mkdir -p "$SSH_DIR"
+  chmod 700 "$SSH_DIR"
+  local ssh_key="$SSH_DIR/google_compute_engine"
   for attempt in 1 2 3; do
-    if "${gc[@]}" compute scp --tunnel-through-iap --zone "$ZONE" \
-      "$setup_script" "$download_script" "$env_file" "$INSTANCE_NAME":/tmp/ 2>/dev/null; then
-      scp_ok=1; break
+    if remote_dir="$("${gc[@]}" compute ssh --ssh-key-file "$ssh_key" --tunnel-through-iap --zone "$ZONE" "$INSTANCE_NAME" \
+      --command 'umask 077; mktemp -d /tmp/network-node.XXXXXXXX')"; then
+      break
     fi
     warn "SSH 尚未就绪，等待重试 ($attempt/3)..."
     sleep 15
   done
-  [ "$scp_ok" -eq 1 ] || die "无法通过 IAP SSH 连接到 VM"
-  "${gc[@]}" compute ssh --tunnel-through-iap --zone "$ZONE" "$INSTANCE_NAME" \
-    --command 'bash /tmp/setup-server.sh /tmp/server-env.sh; rc=$?; rm -f /tmp/server-env.sh /tmp/setup-server.sh /tmp/download.sh; exit $rc'
+  [[ "$remote_dir" =~ ^/tmp/network-node\.[A-Za-z0-9]+$ ]] || die "无法创建安全的远端临时目录"
+  if ! "${gc[@]}" compute scp --ssh-key-file "$ssh_key" --tunnel-through-iap --zone "$ZONE" \
+    "$setup_script" "$download_script" "$env_file" "$INSTANCE_NAME:$remote_dir/"; then
+    "${gc[@]}" compute ssh --ssh-key-file "$ssh_key" --tunnel-through-iap --zone "$ZONE" "$INSTANCE_NAME" \
+      --command "rm -rf '$remote_dir'" || true
+    die "上传失败，已尝试清理远端临时文件"
+  fi
+  "${gc[@]}" compute ssh --ssh-key-file "$ssh_key" --tunnel-through-iap --zone "$ZONE" "$INSTANCE_NAME" \
+    --command "trap 'sudo rm -rf $remote_dir' EXIT HUP INT TERM; sudo bash '$remote_dir/setup-server.sh' '$remote_dir/server-env.sh'; exit \$?"
+
 }
 
 provider_print_summary() {

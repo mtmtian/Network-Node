@@ -40,16 +40,13 @@ cf_api() {
     fi
     if [ "$attempt" -lt 3 ]; then warn "CF API $method $path 失败(HTTP $http)，${delay}s 后重试..."; sleep "$delay"; delay=$((delay*2)); fi
   done
-  # 最终失败：打印 CF 的错误信息（不含 token）
+  # Only report numeric error codes; upstream error bodies can echo request data.
   local msg
   msg="$(printf '%s' "$resp" | python3 -c 'import sys,json
 try:
-  d=json.load(sys.stdin); print("; ".join(e.get("message","") for e in d.get("errors",[])) or d)
+  d=json.load(sys.stdin); print(",".join(str(e["code"]) for e in d.get("errors",[]) if isinstance(e.get("code"), int)) or "unknown")
 except Exception: print("无法解析响应")' 2>/dev/null)"
-  case "$msg" in
-    *9109*|*[Aa]uthentication*|*[Tt]oken*) die "CF API 鉴权失败：$msg（确认 token 含 Account>Cloudflare Tunnel:Edit + Zone>DNS:Edit）" ;;
-    *) die "CF API $method $path 失败：$msg" ;;
-  esac
+  die "CF API $method $path 失败（HTTP ${http}，错误码 ${msg}）；请检查网络及 Token 权限"
 }
 
 jget() { python3 -c "import sys,json;print(json.load(sys.stdin)$1)" 2>/dev/null; }
@@ -81,13 +78,18 @@ if [ -z "$TUNNEL_ID" ] || [ "$TUNNEL_ID" = "None" ]; then
   TUNNEL_ID="$(printf '%s' "$CREATE_JSON" | jget '["result"]["id"]')"
   ok "新建 tunnel：$TUNNEL_ID"
 else
+  SAVED_TUNNEL_ID="$(secret_get CDN_TUNNEL_ID)"
+  [ "$SAVED_TUNNEL_ID" = "$TUNNEL_ID" ] \
+    || die "同名 Tunnel 已存在，但不属于当前 profile 的已保存状态；请使用独立 CDN_TUNNEL_NAME，迁移时先确认资源归属"
   ok "复用已存在 tunnel：$TUNNEL_ID"
 fi
 [ -n "$TUNNEL_ID" ] && [ "$TUNNEL_ID" != "None" ] || die "未取得 tunnel id"
+# Persist ownership before subsequent API steps, so a retry can safely reuse it.
+setkv CDN_TUNNEL_ID "$TUNNEL_ID"
 
-say "[CF 3/5] 配置 ingress：$CDN_HOSTNAME -> http://localhost:8080"
+say "[CF 3/5] 配置 ingress：$CDN_HOSTNAME -> http://127.0.0.1:8080"
 cf_api PUT "/accounts/$ACCOUNT_ID/cfd_tunnel/$TUNNEL_ID/configurations" \
-  "{\"config\":{\"ingress\":[{\"hostname\":\"$CDN_HOSTNAME\",\"service\":\"http://localhost:8080\"},{\"service\":\"http_status:404\"}]}}" >/dev/null
+  "{\"config\":{\"ingress\":[{\"hostname\":\"$CDN_HOSTNAME\",\"service\":\"http://127.0.0.1:8080\"},{\"service\":\"http_status:404\"}]}}" >/dev/null
 ok "ingress 已设置"
 
 say "[CF 4/5] 配置 DNS：$CDN_HOSTNAME CNAME -> $TUNNEL_ID.cfargotunnel.com (proxied)"
@@ -98,6 +100,9 @@ if [ -z "$REC_ID" ] || [ "$REC_ID" = "None" ]; then
   cf_api POST "/zones/$ZONE_ID/dns_records" "$DNS_BODY" >/dev/null
   ok "DNS 记录已创建"
 else
+  DNS_TARGET="$(printf '%s' "$DNS_JSON" | jget '["result"][0]["content"]')"
+  [ "$DNS_TARGET" = "$TUNNEL_ID.cfargotunnel.com" ] \
+    || die "同名 DNS 指向另一条 Tunnel；已停止覆盖，请先确认域名归属"
   cf_api PUT "/zones/$ZONE_ID/dns_records/$REC_ID" "$DNS_BODY" >/dev/null
   ok "DNS 记录已更新"
 fi
