@@ -6,7 +6,7 @@
 
 | 分流入口 | 默认策略 | 可手动调整 |
 |---|---|---|
-| AI / Meta 服务（包括 Facebook、Instagram、WhatsApp 等） | 敏感服务主备 | 手动选择 |
+| AI / Meta 服务（包括 Antigravity 应用、Facebook、Instagram、WhatsApp 等） | 敏感服务主备 | 手动选择 |
 | 海外流量，包括未匹配请求 | 自动测速 | 手动选择 |
 | 国内流量 | DIRECT | 自动测速、手动选择 |
 | Apple 基础服务 | DIRECT；Siri 等既有海外规则仍进入海外流量 | 自动测速、手动选择 |
@@ -49,7 +49,7 @@ AI 和 Meta 的明确域名/域名集共用敏感服务的加密解析器地址�
 
 DNS 分组覆盖静态精确/后缀规则及对应 AI、Meta geosite 集合。域名规则无法推断未知第三方依赖或请求归属；原有 DOMAIN-KEYWORD、IP、协议规则与 DNS 策略也不是逐条等价。新增网站依赖时仍需补精确规则；通配 DNS 规则可能优先于 geosite，见 [Stash DNS 文档](https://stash.wiki/features/dns-server)。
 
-Meta 的静态域名和远程域名集优先于广告拦截、国内分流和普通兜底；AI 认证、上传、监控等已知依赖继续复用共享模板。汇总仅增补策略，不复制维护另一份完整业务规则。
+Meta 的静态域名和远程域名集优先于广告拦截、国内分流和普通兜底；AI 认证、上传、监控等已知依赖由共享敏感服务清单生成。汇总仅增补策略，不复制维护另一份完整业务规则。
 
 ## 验证
 
@@ -61,3 +61,5 @@ python3 -m unittest discover -s tests -p 'test_*.py'
 ```
 
 真实连通性、Stash 导入后的组选择和设备网络差异，需要在各设备上验证。规则策略类型依据 [Stash 策略组文档](https://stash.wiki/proxy-protocols/proxy-groups)。
+
+Antigravity 应用规则、AI 清单来源、Stash 版本要求及已知覆盖限制见 [AI 分流覆盖说明](ai-routing-coverage.md)。
