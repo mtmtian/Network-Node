@@ -1,0 +1,2 @@
+# Independent parser for generated Stash/Mihomo YAML and strategy graph tests.
+PyYAML==6.0.2

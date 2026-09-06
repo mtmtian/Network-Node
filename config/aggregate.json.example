@@ -1,0 +1,10 @@
+{
+  "sources": [
+    {"profile": "cstonecloud-cuii-a", "name": "cstone"},
+    {"profile": "lax-cmin2-01", "name": "lax"},
+    {"profile": "gcloud", "name": "gcloud"}
+  ],
+  "sensitive": ["cstone/Reality", "gcloud/CDN"],
+  "devices": ["mac", "iphone"],
+  "client": "stash"
+}
