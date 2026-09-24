@@ -143,6 +143,7 @@ run_deploy() {
   if [ "${CDN_ENABLE:-false}" = "true" ]; then
     echo "  CDN       : $CDN_HOSTNAME"
   fi
-  echo "  配置文件  : $CLIENTS_DIR/${CLIENT_FILE_PREFIX:-$PROFILE_NAME}-*.yaml"
+  echo "  Stash 配置: $CLIENTS_DIR/stash/${CLIENT_FILE_PREFIX:-$PROFILE_NAME}.yaml"
+  echo "  Mihomo 配置: $CLIENTS_DIR/mihomo/${CLIENT_FILE_PREFIX:-$PROFILE_NAME}.yaml"
   echo "  凭据位置  : ${SECRETS_FILE}（工具自动管理，无需记忆；不要复制到聊天）"
 }

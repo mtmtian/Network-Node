@@ -46,7 +46,7 @@ ANYTLS_PORT=
 
 # Hysteria2 可选增强：端口跳跃 / QUIC 混淆。默认关闭，开启后需要重新生成并导入客户端 YAML。
 # HY2_PORT_RANGE=30000-30010
-# HY2_HOP_INTERVAL=30（整数秒，Stash/Mihomo 均支持；范围仅支持 Mihomo）
+# HY2_HOP_INTERVAL=30（整数秒，双客户端部署必须用整数；范围仅用于 --client mihomo 单独渲染）
 HY2_PORT_RANGE=
 HY2_HOP_INTERVAL=
 HY2_OBFS_ENABLE=false

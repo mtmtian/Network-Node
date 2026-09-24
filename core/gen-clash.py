@@ -15,7 +15,7 @@ import re
 import sys
 import argparse
 import hashlib
-from settings import load_settings, validate
+from settings import FILE_PREFIX_PATTERN, load_settings, validate
 from client_output import write_outputs
 from client_policy import adapt_config
 from sensitive_policy import domain_rules, app_rules
@@ -53,7 +53,7 @@ AI_STRICT_MODE = env.get("AI_STRICT_MODE", "false") == "true"
 FILE_PREFIX = env.get("CLIENT_FILE_PREFIX", "").strip() or PROFILE
 
 devices = env.get("DEVICES", "mac iphone").split()
-safe_name = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
+safe_name = FILE_PREFIX_PATTERN
 if not FILE_PREFIX or not safe_name.fullmatch(FILE_PREFIX):
     sys.exit(
         "ERROR: CLIENT_FILE_PREFIX（或 profile 名）只能包含 1-64 位字母、数字、点、下划线和连字符"

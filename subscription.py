@@ -13,11 +13,12 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
+from core.settings import FILE_PREFIX_PATTERN, NAME, load_settings
+
 ROOT = Path(__file__).resolve().parent
 CLOUD = ROOT / 'cloud/subscription'
 WRANGLER = CLOUD / 'node_modules/wrangler/bin/wrangler.js'
 SERVICE = 'Network-Node subscriptions'
-from core.settings import NAME, load_settings
 
 
 class PublishError(ValueError):
@@ -108,7 +109,7 @@ def verified_file(profile, server=None):
         if server is not None:
             raise PublishError('--server 仅适用于汇总 profile')
         prefix = config.get('CLIENT_FILE_PREFIX', '').strip() or profile
-        if not NAME.fullmatch(prefix):
+        if not FILE_PREFIX_PATTERN.fullmatch(prefix):
             raise PublishError('CLIENT_FILE_PREFIX 无效')
     # Compare the exact bytes before and after source validation to detect a
     # concurrent render. Publish this snapshot, never re-read after validation.

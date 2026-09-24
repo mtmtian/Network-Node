@@ -51,6 +51,15 @@ class SafetyRegressions(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         return result
 
+    def test_deployment_checks_both_clients_before_external_writes(self):
+        # A legacy Mihomo-only interval must not pass deployment preflight when
+        # deployment now publishes both clients after changing the server.
+        config = {'CLIENT_TARGET': 'mihomo', 'HY2_HOP_INTERVAL': '15-30'}
+        validate(config)  # Explicit Mihomo rendering still supports this form.
+        with self.assertRaisesRegex(ValueError, '整数秒'):
+            validate(config, deployment=True)
+        validate(config | {'HY2_HOP_INTERVAL': '30'}, deployment=True)
+
     def test_strict_public_traffic_cannot_select_another_exit(self):
         self.add_conf("AI_STRICT_MODE=true\n")
         self.generate()

@@ -224,7 +224,7 @@ class DeployOutputTest(unittest.TestCase):
                 test ! -e \"$PROJECT_DIR/profiles/gcloud/.secrets.env\"
                 test -f \"$PROJECT_DIR/clash-configs/stash/frantech-client.yaml\"
                 test -f \"$PROJECT_DIR/clash-configs/mihomo/frantech-client.yaml\"
-                grep -F '配置文件  : {root}/clash-configs/frantech-client-*.yaml' <<<\"$output\" >/dev/null
+                grep -F 'Stash 配置: {root}/clash-configs/stash/frantech-client.yaml' <<<\"$output\" >/dev/null
                 """
             )
             result = subprocess.run(

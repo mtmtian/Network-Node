@@ -77,13 +77,13 @@ class SubscriptionTransportTests(unittest.TestCase):
             root = Path(tmp)
             state = root / 'profiles/server'
             state.mkdir(parents=True)
-            (state / 'deploy.conf').write_text('CLIENT_FILE_PREFIX=custom\n')
-            target = root / 'clash-configs/mihomo/custom.yaml'
+            (state / 'deploy.conf').write_text('CLIENT_FILE_PREFIX=custom.edge\n')
+            target = root / 'clash-configs/mihomo/custom.edge.yaml'
             target.parent.mkdir(parents=True)
             content = b'mode: rule\nproxies:\n  []\nrules:\n  []\n'
             target.write_bytes(content)
             manifest = target.parent / '.network-node-outputs.json'
-            manifest.write_text(json.dumps({'server': {'custom.yaml': 'fixture'}}))
+            manifest.write_text(json.dumps({'server': {'custom.edge.yaml': 'fixture'}}))
             with mock.patch.object(subscription, 'ROOT', root):
                 with mock.patch.object(subscription, 'run', return_value=b'') as check:
                     self.assertEqual(subscription.verified_file('server'), content)
@@ -91,7 +91,7 @@ class SubscriptionTransportTests(unittest.TestCase):
                 manifest.write_text('{}')
                 with self.assertRaisesRegex(subscription.PublishError, '归属'):
                     subscription.verified_file('server')
-                manifest.write_text(json.dumps({'server': {'custom.yaml': 'fixture'}}))
+                manifest.write_text(json.dumps({'server': {'custom.edge.yaml': 'fixture'}}))
                 with mock.patch.object(subscription, 'run', side_effect=lambda *a: target.write_text('changed')):
                     with self.assertRaisesRegex(subscription.PublishError, '改变'):
                         subscription.verified_file('server')
