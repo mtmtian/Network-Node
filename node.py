@@ -16,7 +16,7 @@ def main():
     parser.add_argument("action", choices=("status", "validate", "render", "check", "cdn-check",
                                            "ip-check", "ip-sync", "ip-rotate", "ip-rollback", "ip-finalize"))
     parser.add_argument("--profile", required=True)
-    parser.add_argument("--client", choices=("stash", "mihomo"))
+    parser.add_argument("--client", choices=("stash", "mihomo", "both"))
     parser.add_argument("--apply", action="store_true", help="执行换 IP、回滚或释放保留地址；省略时仅显示计划")
     args = parser.parse_args()
     if not NAME.fullmatch(args.profile):
@@ -31,7 +31,7 @@ def main():
         if args.profile != 'gcloud':
             parser.error('当前 GCP 入口恢复仅支持 gcloud profile')
         if args.client:
-            parser.error('IP 操作沿用 profile 的 CLIENT_TARGET，不接受 --client')
+            parser.error('IP 操作默认同步两种客户端，不接受 --client')
         from profile_lock import profile_lock
         sys.path.insert(0, str(ROOT / 'providers'))
         from gcp_ip import Rotation, check, render
@@ -56,7 +56,7 @@ def main():
         print('CDN TLS / WebSocket / VLESS / HTTPS 请求全部通过；未通过直连节点回退')
         return
     if args.client:
-        settings["CLIENT_TARGET"] = args.client
+        settings["CLIENT_TARGET"] = "stash" if args.client == "both" else args.client
     if args.action == "status":
         print(f"Profile: {args.profile}")
         print("客户端输出: " + ("已停用" if settings.get("CLIENT_CONFIG_ENABLE", "true") == "false" else "已启用"))
@@ -77,7 +77,7 @@ def main():
         command += ["--client", args.client]
     env = os.environ | {"NETWORK_NODE_ROOT": str(ROOT), "NETWORK_NODE_STATE_DIR": str(state),
                         "NETWORK_NODE_PROFILE": args.profile}
-    if args.action == 'render' and args.profile == 'gcloud':
+    if args.action in ('render', 'check'):
         from profile_lock import profile_lock
         with profile_lock(state):
             return subprocess.call(command, env=env)

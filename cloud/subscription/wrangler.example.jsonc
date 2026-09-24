@@ -1,0 +1,23 @@
+{
+  "name": "network-node-subscriptions",
+  "account_id": "REPLACE_WITH_ACCOUNT_ID",
+  "main": "worker.mjs",
+  "compatibility_date": "2026-09-24",
+  "workers_dev": true,
+  "preview_urls": false,
+  "observability": {
+    "enabled": false,
+    "logs": {
+      "enabled": false
+    },
+    "traces": {
+      "enabled": false
+    }
+  },
+  "kv_namespaces": [
+    {
+      "binding": "CONFIGS",
+      "id": "REPLACE_WITH_KV_NAMESPACE_ID"
+    }
+  ]
+}

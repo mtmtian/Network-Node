@@ -121,7 +121,7 @@ run_deploy() {
       || die "CDN 端到端验收失败；服务器可能已更新，本次未发布客户端 YAML。请检查后重试"
   fi
 
-  say "生成目标客户端配置（${CLIENT_TARGET:-stash}）"
+  say "生成共享身份客户端配置（Stash + Mihomo）"
     NETWORK_NODE_ROOT="$PROJECT_DIR" \
     NETWORK_NODE_STATE_DIR="$STATE_DIR" \
     NETWORK_NODE_CLIENTS_DIR="$CLIENTS_DIR" \
@@ -143,6 +143,7 @@ run_deploy() {
   if [ "${CDN_ENABLE:-false}" = "true" ]; then
     echo "  CDN       : $CDN_HOSTNAME"
   fi
-  echo "  配置文件  : $CLIENTS_DIR/${CLIENT_FILE_PREFIX:-$PROFILE_NAME}-*.yaml"
+  echo "  Stash 配置: $CLIENTS_DIR/stash/${CLIENT_FILE_PREFIX:-$PROFILE_NAME}.yaml"
+  echo "  Mihomo 配置: $CLIENTS_DIR/mihomo/${CLIENT_FILE_PREFIX:-$PROFILE_NAME}.yaml"
   echo "  凭据位置  : ${SECRETS_FILE}（工具自动管理，无需记忆；不要复制到聊天）"
 }

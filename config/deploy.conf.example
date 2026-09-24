@@ -4,8 +4,9 @@
 # 停用机器可设为 false：跳过客户端输出，保留 profile 和凭据，不操作服务器。
 CLIENT_CONFIG_ENABLE=true
 
-# 客户端目标：stash（默认）/ mihomo。两者 DNS、HY2、TUN 字段分别生成。
-CLIENT_TARGET=stash
+# 默认同时输出 Stash / Mihomo；单独输出使用 node.py render --client stash|mihomo。
+# 共享既有节点身份；留空优先 mac，无 mac 时用 DEVICES 的第一个身份。
+CLIENT_IDENTITY=
 # 默认日常分流：已知 AI 及其依赖优先走 AI 线路，普通国内流量默认直连。
 # true 为可选严格模式：全部公网固定走同一 VPS 的 Reality/CDN，国内也代理。
 # 严格模式不自动切到 HY2/AnyTLS/WARP；不需要时保持 false。
@@ -45,7 +46,7 @@ ANYTLS_PORT=
 
 # Hysteria2 可选增强：端口跳跃 / QUIC 混淆。默认关闭，开启后需要重新生成并导入客户端 YAML。
 # HY2_PORT_RANGE=30000-30010
-# HY2_HOP_INTERVAL=30（整数秒，Stash/Mihomo 均支持；范围仅支持 Mihomo）
+# HY2_HOP_INTERVAL=30（整数秒，双客户端部署必须用整数；范围仅用于 --client mihomo 单独渲染）
 HY2_PORT_RANGE=
 HY2_HOP_INTERVAL=
 HY2_OBFS_ENABLE=false
@@ -65,7 +66,7 @@ HY2_ACME_DNS_PROVIDER=cloudflare
 HY2_UP=
 HY2_DOWN=
 
-# 设备 ID：字母、数字、下划线，1-64 位，空格分隔。
+# 服务器账号清单（兼容历史设备身份，不再决定输出份数）：字母、数字、下划线。
 # 移除设备后部署会自动轮换本 profile 的 AnyTLS 密码，剩余设备需重新导入 YAML。
 DEVICES="mac iphone"
 

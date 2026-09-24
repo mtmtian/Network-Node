@@ -54,5 +54,37 @@ jobs:
           echo "db214c7a2517e63c150d123178d16d102e03a241ccdae4e5e07ffbe9cf56c6f9  $RUNNER_TEMP/mihomo.gz" | sha256sum --check
           gzip --decompress "$RUNNER_TEMP/mihomo.gz"
           chmod 755 "$RUNNER_TEMP/mihomo"
-          MIHOMO_BIN="$RUNNER_TEMP/mihomo" python3 -m unittest discover -s tests -p 'test_mihomo_config.py' -v
-          MIHOMO_BIN="$RUNNER_TEMP/mihomo" python3 -m unittest discover -s tests -p 'test_aggregate.py' -v
+          mkdir -p "$RUNNER_TEMP/mihomo-data"
+          for pair in geoip.dat:geoip.dat geosite.dat:geosite.dat GeoLite2-ASN.mmdb:ASN.mmdb country.mmdb:Country.mmdb; do
+            source_name="${pair%%:*}"
+            target_name="${pair#*:}"
+            curl --fail --location --retry 3 --max-time 120 \
+              "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/2df2f6281aa2d14d54b8a099b9326f63ba389fd4/$source_name" \
+              --output "$RUNNER_TEMP/mihomo-data/$target_name"
+          done
+          export MIHOMO_BIN="$RUNNER_TEMP/mihomo"
+          export MIHOMO_DATA_DIR="$RUNNER_TEMP/mihomo-data"
+          python3 -m unittest discover -s tests -p 'test_mihomo_config.py' -v
+          python3 -m unittest discover -s tests -p 'test_aggregate*.py' -v
+
+  subscription:
+    name: Validate private subscription Worker
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Set up Node
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: cloud/subscription/package-lock.json
+      - name: Install locked dependencies
+        working-directory: cloud/subscription
+        run: npm ci --ignore-scripts
+      - name: Test real workerd and local KV
+        working-directory: cloud/subscription
+        run: npm test

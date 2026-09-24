@@ -2,6 +2,7 @@
 import os
 import pathlib
 import subprocess
+import shutil
 import tempfile
 import unittest
 
@@ -56,7 +57,7 @@ class MihomoConfigIntegrationTest(unittest.TestCase):
             env["NETWORK_NODE_STATE_DIR"] = str(root)
             env["NETWORK_NODE_PROFILE"] = "test"
             generated = subprocess.run(
-                [os.environ.get("PYTHON", "python3"), str(PROJECT_ROOT / "core" / "gen-clash.py")],
+                [os.environ.get("PYTHON", "python3"), str(PROJECT_ROOT / "core" / "gen-clash.py"), "--client", "mihomo"],
                 env=env,
                 text=True,
                 capture_output=True,
@@ -64,7 +65,12 @@ class MihomoConfigIntegrationTest(unittest.TestCase):
             )
             self.assertEqual(generated.returncode, 0, generated.stderr)
 
-            config = root / "clash-configs" / "test-mac.yaml"
+            config = root / "clash-configs" / "mihomo" / "test.yaml"
+            if os.environ.get('MIHOMO_DATA_DIR'):
+                for name in ('geoip.dat', 'geosite.dat', 'ASN.mmdb', 'Country.mmdb'):
+                    source = pathlib.Path(os.environ['MIHOMO_DATA_DIR']) / name
+                    if source.is_file():
+                        shutil.copyfile(source, root / name)
             parsed = subprocess.run(
                 [mihomo, "-t", "-d", tmp, "-f", str(config)],
                 text=True,

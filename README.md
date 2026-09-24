@@ -91,7 +91,7 @@ GCP 和 VPS 真正变化的只有服务器生命周期、连接方式与防火�
 | 配置 | 默认值 | 说明 |
 |---|---|---|
 | `CLIENT_CONFIG_ENABLE` | `true` | 设为 `false` 跳过此 profile 的客户端输出，保留状态与凭据；不操作服务器 |
-| `CLIENT_TARGET` | `stash` | 生成 Stash 或 `mihomo` 对应字段 |
+| `CLIENT_IDENTITY` | 自动选择已有 `mac`，否则第一个身份 | 两个客户端共享此身份；默认同时输出 Stash / Mihomo |
 | `AI_STRICT_MODE` | `false` | 默认日常分流：AI 优先保护、国内默认直连；`true` 才将全部公网统一到 AI 线路 |
 | `REALITY_PORT` | `443` | Reality 监听端口 |
 | `REALITY_TARGET` / `REALITY_SNI` | `1.1.1.1:443` / 空 | Reality 目标与客户端 SNI |
@@ -100,7 +100,7 @@ GCP 和 VPS 真正变化的只有服务器生命周期、连接方式与防火�
 | `HY2_OBFS_ENABLE` | `false` | 可选 Salamander 混淆；开启后不再表现为标准 HTTP/3 |
 | `HY2_ACME_ENABLE` | `false` | 可选 Cloudflare DNS-01 真实证书 |
 | `ANYTLS_PORT` | 随机 | AnyTLS TCP 端口 |
-| `DEVICES` | `mac iphone` | 每设备独立 Reality/HY2 凭据及 YAML；AnyTLS 为 profile 共享密码，自动管理 |
+| `DEVICES` | `mac iphone` | 服务器既有 Reality/HY2 账号清单，不再按设备输出 YAML；AnyTLS 为 profile 共享密码 |
 | `PRIVACY_MODE` | `false` | 仅日常分流生效：国内组默认直连；`true` 则默认代理 |
 | `CDN_ENABLE` | `false` | 可选 Cloudflare Tunnel 出口 |
 | `CDN_ONLY` | `false` | 仅使用 Cloudflare WS，并关闭直连代理端口 |
@@ -129,14 +129,12 @@ GCP 和 VPS 真正变化的只有服务器生命周期、连接方式与防火�
 
 ## 导入客户端
 
-需要把多台服务器汇总为一份配置、敏感服务固定主备而普通海外自动选线时，使用 [多服务器汇总与日常分流](docs/aggregate-routing.md)。每个业务组保留默认策略和手动排查入口，完整节点列表只维护一处。
+多服务器日常分流使用 [双客户端汇总与白名单分流](docs/aggregate-routing.md)：默认同时生成 Stash / Mihomo 两份文件，AI 等敏感服务走指定主备，国内域名白名单直连，明确列出的普通海外服务走自动测速，其余 TCP/UDP 由敏感主备兜底。共享身份计划不区分 Mac/iPhone 输出，Stash 可显式发布到 iCloud；Mihomo 可发布到 [Cloudflare 私有 HTTPS 订阅](cloud/subscription/README.md)，通过钥匙串令牌复制链接或一键导入。
 
 部署成功后，每个平台默认得到两份名称明确的 YAML：
 
-- `clash-configs/gcloud-mac.yaml`
-- `clash-configs/gcloud-iphone.yaml`
-- `clash-configs/<profile>-mac.yaml`
-- `clash-configs/<profile>-iphone.yaml`
+- `clash-configs/stash/<profile>.yaml`（例如 `gcloud.yaml`）
+- `clash-configs/mihomo/<profile>.yaml`（Clash Verge）
 
 生成器通过精确文件归属清单管理输出，不按前缀通配符删除。`cstone` 与 `cstone-next` 可以安全共存；
 不同 profile 指定相同输出文件会报错。旧版本未登记的文件、移除设备后被手工修改的文件会保留。
@@ -147,8 +145,11 @@ GCP 和 VPS 真正变化的只有服务器生命周期、连接方式与防火�
 - Clash Verge：Settings → Profiles → Import
 - 其他客户端：使用支持 Reality、Hysteria2 和 AnyTLS 的 Mihomo/Clash.Meta 兼容客户端
 
-`CLIENT_TARGET=stash` 为默认目标，使用 Stash 的 HY2 `auth`、`up-speed/down-speed`、DNS `follow-rule` 和 STUN 协议规则；
-`CLIENT_TARGET=mihomo` 生成 Mihomo 字段和 TUN 设置。两种目标共用源规则，但不能把同一份 YAML 视为两端字段完全等价。
+默认 `node.py render --profile <profile>` 同时生成两种客户端；`--client stash|mihomo` 可单独更新一份，另一份保持原样。
+Stash 使用 HY2 `auth`、`up-speed/down-speed`、DNS `follow-rule` 和 STUN 协议规则；Mihomo 使用对应字段和 TUN 设置。
+`CLIENT_IDENTITY` 选定共享的既有凭据身份；留空时优先 `mac`，否则用 `DEVICES` 第一项。Mac/iPhone 共用同一份 Stash 文件；该身份名仅是历史账号键，不再是设备绑定。
+历史 `CLIENT_TARGET` 不再控制生成份数，定向输出改用 `--client`。同时输出时 HY2 跳端口间隔须用整数，范围仅支持 `--client mihomo`。
+旧设备文件保留供迁移，不再刷新；生成不修改 `DEVICES`、服务器账号或节点密码。两种目标共用源规则，但字段并不完全等价。
 Stash 的节点域名独立解析功能需要 iOS/tvOS 3.6 或 macOS 4.3 及以上版本。
 
 **默认使用日常分流：普通国内网站直连，AI 核心服务及已知依赖优先走 AI 线路。**
@@ -181,7 +182,7 @@ AI 入口全部不可用时，公网业务失败；国内业务 DNS 分支也被
 
 `HY2_PORT_RANGE`、`HY2_OBFS_ENABLE`、`HY2_ACME_ENABLE` 均为可选增强：开启后需要重新部署服务端并重新生成客户端 YAML；默认关闭时不改变已有协议行为。
 
-修改 `DEVICES` 后重跑同一个 profile 的入口，即可增加或撤销设备。
+修改 `DEVICES` 后重跑同一个 profile 的部署入口，会增加或撤销相应的服务器身份；这不是客户端输出开关。共享配置后无法仅靠该身份区分或撤销单台设备。
 
 自签名 HY2 证书在下次成功部署后自动回传 SHA256 指纹并写入 YAML；已有 profile 尚无指纹时保留原兼容行为。
 ACME 证书使用可持久写入的 `/var/lib/hysteria/acme`。AnyTLS 的临时自签名证书与 HY2 ACME 相互独立，
@@ -274,7 +275,7 @@ Both entry points run the same shared pipeline:
 2. Generate per-device credentials locally.
 3. Provision or secure a reachable host.
 4. Install BBR, Xray/Reality, Hysteria2, AnyTLS, systemd units, and security updates.
-5. Recover the Reality public key and generate one Stash-first, Mihomo-compatible YAML per device.
+5. Recover the Reality public key and generate separate Stash and Mihomo YAML files using a shared existing client identity.
 
 The provider adapters only own host lifecycle, connectivity, and firewall behaviour. Key generation, server configuration, routing rules, optional Cloudflare setup, and client generation remain in `core/`.
 

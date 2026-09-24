@@ -12,7 +12,7 @@ GENERATOR = PROJECT_ROOT / "core" / "gen-clash.py"
 
 
 class GenerateClashConfigTest(unittest.TestCase):
-    def test_generates_one_config_per_device_from_shared_core(self):
+    def test_generates_both_clients_with_one_shared_identity(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = pathlib.Path(tmp)
             (root / "deploy.conf").write_text(
@@ -61,10 +61,10 @@ class GenerateClashConfigTest(unittest.TestCase):
             )
 
             self.assertEqual(result.returncode, 0, result.stderr)
-            outputs = sorted((root / "clash-configs").glob("*.yaml"))
-            self.assertEqual([path.name for path in outputs], ["test-mac.yaml", "test-phone.yaml"])
+            outputs = sorted((root / "clash-configs").rglob("*.yaml"))
+            self.assertEqual([str(path.relative_to(root / "clash-configs")) for path in outputs], ["mihomo/test.yaml", "stash/test.yaml"])
 
-            mac_path = root / "clash-configs" / "test-mac.yaml"
+            mac_path = root / "clash-configs" / "mihomo" / "test.yaml"
             mac = mac_path.read_text()
             self.assertEqual(mac_path.stat().st_mode & 0o777, 0o600)
             self.assertIn("server: 203.0.113.10", mac)
@@ -264,7 +264,7 @@ class GenerateClashConfigTest(unittest.TestCase):
                 check=False,
             )
             self.assertEqual(result.returncode, 0, result.stderr)
-            config = (root / "clash-configs" / "test-mac.yaml").read_text()
+            config = (root / "clash-configs" / "mihomo" / "test.yaml").read_text()
             self.assertIn('name: "US-CDN"', config)
             self.assertNotIn('name: "US-Reality"', config)
             self.assertNotIn('name: "US-HY2"', config)
@@ -307,7 +307,7 @@ class GenerateClashConfigTest(unittest.TestCase):
                 check=False,
             )
             self.assertEqual(result.returncode, 0, result.stderr)
-            config = (root / "clash-configs" / "test-mac.yaml").read_text()
+            config = (root / "clash-configs" / "mihomo" / "test.yaml").read_text()
             ai_group = config.split('name: "🤖 AI 隐私出口"', 1)[1].split(
                 '\n  - name:', 1
             )[0]
@@ -347,7 +347,7 @@ class GenerateClashConfigTest(unittest.TestCase):
                 check=False,
             )
             self.assertEqual(result.returncode, 0, result.stderr)
-            config = (root / "clash-configs" / "test-mac.yaml").read_text()
+            config = (root / "clash-configs" / "mihomo" / "test.yaml").read_text()
             self.assertIn('name: "US-Reality"', config)
             self.assertIn('name: "US-Reality-WARP"', config)
             self.assertIn("port: 42000", config)
@@ -417,14 +417,14 @@ class GenerateClashConfigTest(unittest.TestCase):
             env["NETWORK_NODE_STATE_DIR"] = str(root)
             env["NETWORK_NODE_PROFILE"] = "test"
             result = subprocess.run(
-                [sys.executable, str(GENERATOR)],
+                [sys.executable, str(GENERATOR), "--client", "mihomo"],
                 env=env,
                 text=True,
                 capture_output=True,
                 check=False,
             )
             self.assertEqual(result.returncode, 0, result.stderr)
-            config = (root / "clash-configs" / "test-mac.yaml").read_text()
+            config = (root / "clash-configs" / "mihomo" / "test.yaml").read_text()
             self.assertIn("server: 203.0.113.10", config)
             self.assertIn("ports: 30000-30010", config)
             self.assertIn("obfs: salamander", config)
@@ -463,7 +463,7 @@ class GenerateClashConfigTest(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertTrue(unrelated.exists())
             self.assertTrue(stale.exists(), "Unowned legacy outputs must be preserved")
-            self.assertTrue((clients / "dmit-mac.yaml").exists())
+            self.assertTrue((clients / "stash" / "dmit.yaml").exists())
 
     def test_custom_client_file_prefix_does_not_change_profile_state(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -496,9 +496,9 @@ class GenerateClashConfigTest(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertTrue(stale.exists(), "Unowned legacy outputs must be preserved")
             self.assertTrue(unrelated.exists())
-            self.assertTrue((clients / "cstonecloud-mac.yaml").exists())
+            self.assertTrue((clients / "stash" / "cstonecloud.yaml").exists())
 
-    def test_missing_later_device_credentials_preserve_existing_profile_yaml(self):
+    def test_missing_selected_identity_credentials_preserve_existing_profile_yaml(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = pathlib.Path(tmp)
             clients = root / "clash-configs"
@@ -524,7 +524,7 @@ class GenerateClashConfigTest(unittest.TestCase):
             env["NETWORK_NODE_PROFILE"] = "test"
 
             result = subprocess.run(
-                [sys.executable, str(GENERATOR)], env=env, text=True,
+                [sys.executable, str(GENERATOR), "--identity", "phone"], env=env, text=True,
                 capture_output=True, check=False,
             )
 

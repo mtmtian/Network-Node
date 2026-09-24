@@ -222,9 +222,9 @@ class DeployOutputTest(unittest.TestCase):
                 printf '%s\\n' \"$output\"
                 test -f \"$STATE_DIR/.secrets.env\"
                 test ! -e \"$PROJECT_DIR/profiles/gcloud/.secrets.env\"
-                test -f \"$PROJECT_DIR/clash-configs/frantech-client-mac.yaml\"
-                test -f \"$PROJECT_DIR/clash-configs/frantech-client-iphone.yaml\"
-                grep -F '配置文件  : {root}/clash-configs/frantech-client-*.yaml' <<<\"$output\" >/dev/null
+                test -f \"$PROJECT_DIR/clash-configs/stash/frantech-client.yaml\"
+                test -f \"$PROJECT_DIR/clash-configs/mihomo/frantech-client.yaml\"
+                grep -F 'Stash 配置: {root}/clash-configs/stash/frantech-client.yaml' <<<\"$output\" >/dev/null
                 """
             )
             result = subprocess.run(
@@ -443,7 +443,7 @@ EOF
                 run_deploy >/dev/null
                 test -f "$STATE_DIR/cf-profile"
                 test -f "$STATE_DIR/cdn-probed"
-                test -f "$PROJECT_DIR/clash-configs/cdn-test-mac.yaml"
+                test -f "$PROJECT_DIR/clash-configs/stash/cdn-test.yaml"
                 """
             )
             result = subprocess.run(

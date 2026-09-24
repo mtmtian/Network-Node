@@ -7,6 +7,7 @@ import shlex
 import sys
 
 NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}\Z")
+FILE_PREFIX_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}\Z")
 DEVICE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_]{0,63}\Z")
 GENERATED_OPTIONS = {"HY2_PORT", "ANYTLS_PORT", "WARP_REALITY_PORT", "CDN_WS_PATH"}
 CONNECTION_KEYS = (
@@ -54,6 +55,8 @@ def validate(settings, *, deployment=False):
         raise ValueError("设备 ID 仅支持 1-64 位字母、数字、下划线；不支持点或连字符")
     if any(not DEVICE.fullmatch(device) for device in settings.get("ANYTLS_DEVICES", "").split()):
         raise ValueError("已保存的 AnyTLS 设备清单无效")
+    if settings.get("CLIENT_IDENTITY") and settings["CLIENT_IDENTITY"] not in devices:
+        raise ValueError("CLIENT_IDENTITY 必须是 DEVICES 中的已有身份")
     for key in ("CLIENT_CONFIG_ENABLE", "CDN_ENABLE", "CDN_ONLY", "WARP_ENABLE", "PRIVACY_MODE",
                 "AI_STRICT_MODE", "HY2_OBFS_ENABLE", "HY2_ACME_ENABLE"):
         if key in settings and settings[key] not in ("true", "false"):
@@ -85,8 +88,9 @@ def validate(settings, *, deployment=False):
         match = re.fullmatch(r"([1-9]\d*)(?:-([1-9]\d*))?", hop)
         if not match or (match[2] and int(match[1]) > int(match[2])):
             raise ValueError("HY2_HOP_INTERVAL 必须是正整数或递增范围")
-        if target == "stash" and match[2]:
-            raise ValueError("Stash 的 HY2_HOP_INTERVAL 需要整数秒；范围仅用于 CLIENT_TARGET=mihomo")
+        requires_stash = target == "stash" or (deployment and settings.get("CLIENT_CONFIG_ENABLE", "true") != "false")
+        if requires_stash and match[2]:
+            raise ValueError("Stash/双客户端部署的 HY2_HOP_INTERVAL 需要整数秒；范围仅用于显式 --client mihomo 渲染")
     for key in ("REALITY_SNI", "HY2_SNI", "HY2_ACME_DOMAIN", "CDN_HOSTNAME"):
         if settings.get(key) and not re.fullmatch(r"[A-Za-z0-9.-]+", settings[key]):
             raise ValueError(f"{key} 必须是域名或 IPv4 地址")

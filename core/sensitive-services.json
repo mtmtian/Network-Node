@@ -142,5 +142,20 @@
       "us-west3-aiplatform.googleapis.com",
       "us-west4-aiplatform.googleapis.com"
     ]
+  },
+  "claude_dependencies": {
+    "suffixes": [
+      "claude.app"
+    ],
+    "domains": [
+      "http-intake.logs.us5.datadoghq.com",
+      "cdnjs.cloudflare.com",
+      "cdn.jsdelivr.net",
+      "cdn.tailwindcss.com",
+      "code.jquery.com",
+      "unpkg.com",
+      "fonts.googleapis.com",
+      "fonts.gstatic.com"
+    ]
   }
 }
