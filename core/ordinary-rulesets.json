@@ -1,0 +1,70 @@
+{
+  "revision": "0f3410e013082b242f381750899a533078914f34",
+  "categories": {
+    "media": [
+      "disney",
+      "hbo",
+      "primevideo",
+      "vimeo",
+      "dailymotion",
+      "deezer",
+      "soundcloud",
+      "tidal",
+      "lastfm"
+    ],
+    "games": [
+      "steam",
+      "epicgames",
+      "gog",
+      "playstation",
+      "xbox",
+      "nintendo",
+      "ubisoft",
+      "ea",
+      "blizzard",
+      "riot",
+      "rockstar"
+    ],
+    "social": [
+      "discord",
+      "signal",
+      "line",
+      "threads"
+    ],
+    "news": [
+      "bbc",
+      "cnn",
+      "nytimes",
+      "bloomberg",
+      "reuters",
+      "wsj",
+      "economist",
+      "ft",
+      "theguardian"
+    ],
+    "learning": [
+      "coursera",
+      "edx",
+      "khanacademy",
+      "stackexchange"
+    ],
+    "development": [
+      "npmjs",
+      "python",
+      "docker",
+      "rust",
+      "golang",
+      "debian",
+      "ubuntu",
+      "archlinux",
+      "sourceforge",
+      "kubernetes",
+      "homebrew",
+      "fedora",
+      "readthedocs",
+      "ruby",
+      "flutter",
+      "dart"
+    ]
+  }
+}

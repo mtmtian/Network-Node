@@ -20,3 +20,12 @@ __pycache__/
 # Local Graphify analysis cache (may contain absolute paths and derived metadata)
 config/mcporter.json
 graphify-out/
+
+# Worker tools and local runtime state
+node_modules/
+.wrangler/
+.dev.vars*
+
+# Account-specific subscription deployment settings
+/cloud/subscription/wrangler.jsonc
+/cloud/subscription/endpoint.json

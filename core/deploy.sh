@@ -121,7 +121,7 @@ run_deploy() {
       || die "CDN 端到端验收失败；服务器可能已更新，本次未发布客户端 YAML。请检查后重试"
   fi
 
-  say "生成目标客户端配置（${CLIENT_TARGET:-stash}）"
+  say "生成共享身份客户端配置（Stash + Mihomo）"
     NETWORK_NODE_ROOT="$PROJECT_DIR" \
     NETWORK_NODE_STATE_DIR="$STATE_DIR" \
     NETWORK_NODE_CLIENTS_DIR="$CLIENTS_DIR" \

@@ -54,6 +54,8 @@ def validate(settings, *, deployment=False):
         raise ValueError("设备 ID 仅支持 1-64 位字母、数字、下划线；不支持点或连字符")
     if any(not DEVICE.fullmatch(device) for device in settings.get("ANYTLS_DEVICES", "").split()):
         raise ValueError("已保存的 AnyTLS 设备清单无效")
+    if settings.get("CLIENT_IDENTITY") and settings["CLIENT_IDENTITY"] not in devices:
+        raise ValueError("CLIENT_IDENTITY 必须是 DEVICES 中的已有身份")
     for key in ("CLIENT_CONFIG_ENABLE", "CDN_ENABLE", "CDN_ONLY", "WARP_ENABLE", "PRIVACY_MODE",
                 "AI_STRICT_MODE", "HY2_OBFS_ENABLE", "HY2_ACME_ENABLE"):
         if key in settings and settings[key] not in ("true", "false"):

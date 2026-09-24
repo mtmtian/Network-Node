@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate Stash-first, Mihomo-compatible YAML configs, one per device.
+"""Generate Stash-first, Mihomo-compatible YAML configs, one shared identity per client.
 
 Reads deploy.conf (DEVICES, REALITY_PORT, REALITY_SNI, PROJECT_ID, REGION) and
 .secrets.env (STATIC_IP, REALITY_PUBLIC, REALITY_SHORTID, HY2_PORT,
@@ -22,7 +22,8 @@ from sensitive_policy import domain_rules, app_rules
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("--check", action="store_true", help="只检查输出是否与当前配置一致，不写文件")
-parser.add_argument("--client", choices=("stash", "mihomo"), help="客户端目标，默认读取 CLIENT_TARGET/stash")
+parser.add_argument("--client", choices=("stash", "mihomo", "both"), default="both", help="客户端目标，默认同时生成两份")
+parser.add_argument("--identity", help="复用的已有凭据身份；不创建或轮换服务器账号")
 args = parser.parse_args()
 
 ROOT = pathlib.Path(os.environ.get("NETWORK_NODE_ROOT", pathlib.Path(__file__).resolve().parent.parent))
@@ -38,15 +39,16 @@ OUT_DIR = pathlib.Path(os.environ.get("NETWORK_NODE_CLIENTS_DIR", ROOT / "clash-
 
 try:
     env = load_settings(STATE_DIR)
-    if args.client:
-        env["CLIENT_TARGET"] = args.client
-    validate(env)
+    if args.identity:
+        env["CLIENT_IDENTITY"] = args.identity
+    targets = ("stash", "mihomo") if args.client == "both" else (args.client,)
+    for target in targets:
+        validate(env | {"CLIENT_TARGET": target})
 except (ValueError, OSError) as exc:
     sys.exit(f"ERROR: {exc}")
 if env.get("CLIENT_CONFIG_ENABLE", "true") == "false":
     print("此 profile 已停用客户端配置输出，跳过生成和一致性检查")
     sys.exit(0)
-CLIENT_TARGET = env.get("CLIENT_TARGET", "stash")
 AI_STRICT_MODE = env.get("AI_STRICT_MODE", "false") == "true"
 FILE_PREFIX = env.get("CLIENT_FILE_PREFIX", "").strip() or PROFILE
 
@@ -61,6 +63,11 @@ if not devices or len(devices) != len(set(devices)):
 unsafe_devices = [device for device in devices if not safe_name.fullmatch(device)]
 if unsafe_devices:
     sys.exit(f"ERROR: DEVICES 包含不安全设备名 {unsafe_devices}")
+
+# Keep server account inventory intact; client files share one existing identity.
+identity = args.identity or env.get("CLIENT_IDENTITY", "").strip() or ("mac" if "mac" in devices else devices[0])
+if identity not in devices:
+    sys.exit("ERROR: CLIENT_IDENTITY/--identity 必须是 DEVICES 中的已有身份")
 
 # ── CDN 套娃出口（可选）──
 # 启用条件：CDN_ENABLE=true 且 CF/WS 参数齐全。启用时把 US-CDN 作为一个普通节点
@@ -94,7 +101,7 @@ if WARP_ENABLE:
 missing = [k for k in required if not env.get(k)]
 if missing:
     sys.exit(f"ERROR: 缺少必要变量 {missing}（应由部署入口自动生成，请检查 profile 状态）")
-for device in devices:
+for device in (identity,):
     if not CDN_ONLY and (
         not env.get(f"REALITY_UUID_{device}") or not env.get(f"HY2_PASS_{device}")
     ):
@@ -120,10 +127,6 @@ HY2_SKIP_CERT_VERIFY = "false" if HY2_ACME_ENABLE else "true"
 HY2_CERT_SHA256 = env.get("HY2_CERT_SHA256", "").replace(":", "").lower()
 if HY2_CERT_SHA256 and not re.fullmatch(r"[0-9a-f]{64}", HY2_CERT_SHA256):
     sys.exit("ERROR: HY2_CERT_SHA256 必须是 64 位 SHA256 指纹")
-HY2_PIN = ""
-if not HY2_ACME_ENABLE and HY2_CERT_SHA256:
-    pin_field = "server-cert-fingerprint" if CLIENT_TARGET == "stash" else "fingerprint"
-    HY2_PIN = f'    {pin_field}: "{HY2_CERT_SHA256}"\n'
 HY2_OBFS_ENABLE = env.get("HY2_OBFS_ENABLE", "false") == "true"
 HY2_OBFS_PASSWORD = env.get("HY2_OBFS_PASSWORD", "").strip()
 if HY2_OBFS_ENABLE and not HY2_OBFS_PASSWORD:
@@ -136,12 +139,6 @@ CDN_REF = '\n      - "US-CDN"' if cdn_on else ""
 # 自伤丢包反而更慢。留空 = 保持 Hysteria2 默认动态 CC（向后兼容，与历史行为一致）。
 HY2_UP = env.get("HY2_UP", "").strip()
 HY2_DOWN = env.get("HY2_DOWN", "").strip()
-HY2_BW = f'    up: "{HY2_UP}"\n    down: "{HY2_DOWN}"\n' if HY2_UP and HY2_DOWN else ""
-if CLIENT_TARGET == "stash" and HY2_UP and HY2_DOWN:
-    def mbps(value):
-        match = re.fullmatch(r"(\d+(?:\.\d+)?)\s*([kmg]?bps)?", value, re.I)
-        return float(match[1]) * {None: 1, "bps": 0.000001, "kbps": 0.001, "mbps": 1, "gbps": 1000}[match[2].lower() if match[2] else None]
-    HY2_BW = f"    up-speed: {mbps(HY2_UP):g}\n    down-speed: {mbps(HY2_DOWN):g}\n"
 
 
 def cdn_proxy_block(dev_cdn_uuid):
@@ -261,7 +258,18 @@ template_revision = hashlib.sha256(
     + pathlib.Path(__file__).with_name("sensitive_policy.py").read_bytes()
     + pathlib.Path(__file__).with_name("sensitive-services.json").read_bytes()
 ).hexdigest()[:12]
-for dev in devices:
+for CLIENT_TARGET in targets:
+    dev = identity
+    HY2_PIN = ""
+    if not HY2_ACME_ENABLE and HY2_CERT_SHA256:
+        pin_field = "server-cert-fingerprint" if CLIENT_TARGET == "stash" else "fingerprint"
+        HY2_PIN = f'    {pin_field}: "{HY2_CERT_SHA256}"\n'
+    HY2_BW = f'    up: "{HY2_UP}"\n    down: "{HY2_DOWN}"\n' if HY2_UP and HY2_DOWN else ""
+    if CLIENT_TARGET == "stash" and HY2_UP and HY2_DOWN:
+        def mbps(value):
+            match = re.fullmatch(r"(\d+(?:\.\d+)?)\s*([kmg]?bps)?", value, re.I)
+            return float(match[1]) * {None: 1, "bps": 0.000001, "kbps": 0.001, "mbps": 1, "gbps": 1000}[match[2].lower() if match[2] else None]
+        HY2_BW = f"    up-speed: {mbps(HY2_UP):g}\n    down-speed: {mbps(HY2_DOWN):g}\n"
     uuid = env.get(f"REALITY_UUID_{dev}")
     hy2pw = env.get(f"HY2_PASS_{dev}")
     dev_cdn_uuid = env.get(f"CDN_UUID_{dev}", "")
@@ -291,13 +299,13 @@ for dev in devices:
         sys.exit("ERROR: 没有可用的代理节点")
 
     yaml = TEMPLATE.format(
-        DEVICE=dev,
+        DEVICE="shared",
         PROFILE_OWNER=PROFILE or FILE_PREFIX,
         TARGET_LABEL=CLIENT_TARGET,
         STRICT_LABEL=str(AI_STRICT_MODE).lower(),
         TEMPLATE_REVISION=template_revision,
         SENSITIVE_RULES=domain_rules("🤖 AI 隐私出口"),
-        APP_RULES=app_rules(CLIENT_TARGET, dev, "🤖 AI 隐私出口"),
+        APP_RULES=app_rules(CLIENT_TARGET, "mac", "🤖 AI 隐私出口"),
         DNS_FOLLOW_RULE="  follow-rule: true" if CLIENT_TARGET == "stash" else "  respect-rules: true",
         STUN_PROTOCOL_RULE="  - PROTOCOL,STUN,🤖 AI 隐私出口" if CLIENT_TARGET == "stash" else "",
         SERVER_LABEL=(
@@ -321,14 +329,19 @@ for dev in devices:
         **env,
     )
     yaml = adapt_config(yaml, CLIENT_TARGET, AI_STRICT_MODE, ai_nodes)
-    filename = f"{FILE_PREFIX}-{dev}.yaml" if FILE_PREFIX else f"{dev}.yaml"
-    rendered[OUT_DIR / filename] = yaml
+    rendered[OUT_DIR / CLIENT_TARGET / f"{FILE_PREFIX}.yaml"] = yaml
 
 try:
-    current = write_outputs(OUT_DIR, PROFILE or FILE_PREFIX, rendered, check=args.check)
+    current = True
+    for target in targets:
+        directory = OUT_DIR / target
+        result = write_outputs(directory, PROFILE or FILE_PREFIX,
+                               {path: text for path, text in rendered.items() if path.parent == directory},
+                               check=args.check)
+        current = result and current
 except (ValueError, OSError) as exc:
     sys.exit(f"ERROR: {exc}")
 if args.check:
     print("配置与当前源一致" if current else "配置缺失或已过期；请运行 render")
     sys.exit(0 if current else 1)
-print(f"全部 {len(devices)} 份 {CLIENT_TARGET} 配置已写入 {OUT_DIR}；AI 严格模式={AI_STRICT_MODE}")
+print(f"全部 {len(targets)} 份共享身份客户端 配置已写入 {OUT_DIR}；AI 严格模式={AI_STRICT_MODE}")

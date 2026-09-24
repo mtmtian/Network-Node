@@ -35,6 +35,7 @@ class SafetyRegressions(unittest.TestCase):
                                  "PROFILE_NAME": "alpha"}
 
     def generate(self, *args, success=True):
+        self.client = args[args.index("--client") + 1] if "--client" in args else "stash"
         result = subprocess.run([sys.executable, str(ROOT / "core/gen-clash.py"), *args],
                                 env=self.env, capture_output=True, text=True)
         if success:
@@ -53,7 +54,7 @@ class SafetyRegressions(unittest.TestCase):
     def test_strict_public_traffic_cannot_select_another_exit(self):
         self.add_conf("AI_STRICT_MODE=true\n")
         self.generate()
-        text = (self.output / "alpha-mac.yaml").read_text()
+        text = (self.output / self.client / "alpha.yaml").read_text()
         groups = text.split("\nproxy-groups:\n")[1].split("\nrule-providers:\n")[0]
         self.assertEqual(groups.count("  - name:"), 2)
         self.assertNotIn("- DIRECT", groups)
@@ -81,7 +82,7 @@ class SafetyRegressions(unittest.TestCase):
                 with self.subTest(client=client, strict=strict):
                     self.add_conf('AI_STRICT_MODE=' + strict + '\n')
                     self.generate('--client', client)
-                    text = (self.output / 'alpha-mac.yaml').read_text()
+                    text = (self.output / self.client / "alpha.yaml").read_text()
                     groups = text.split('\nproxy-groups:\n', 1)[1].split('\nrule-providers:\n', 1)[0]
                     blocks = groups.split('  - name:')
                     for block in blocks:
@@ -99,7 +100,7 @@ class SafetyRegressions(unittest.TestCase):
         for client in ("stash", "mihomo"):
             with self.subTest(client=client):
                 self.generate("--client", client)
-                config = (self.output / "alpha-mac.yaml").read_text()
+                config = (self.output / self.client / "alpha.yaml").read_text()
                 cn_group = config.split('name: "🇨🇳 国内流量"', 1)[1].split('name: "🛑 屏蔽流量"', 1)[0]
                 self.assertLess(cn_group.index("- DIRECT"), cn_group.index('- "🌐 代理流量"'))
                 rules = config.split("\nrules:\n", 1)[1]
@@ -118,20 +119,20 @@ class SafetyRegressions(unittest.TestCase):
     def test_domestic_dns_follows_the_domestic_group_in_both_modes(self):
         self.add_conf("PRIVACY_MODE=true\n")
         self.generate()
-        config = (self.output / "alpha-mac.yaml").read_text()
+        config = (self.output / self.client / "alpha.yaml").read_text()
         cn_group = config.split('name: "🇨🇳 国内流量"', 1)[1].split('name: "🛑 屏蔽流量"', 1)[0]
         self.assertLess(cn_group.index('- "🌐 代理流量"'), cn_group.index("- DIRECT"))
         self.assertIn("IP-CIDR,223.5.5.5/32,🇨🇳 国内流量,no-resolve", config)
         self.add_conf("AI_STRICT_MODE=true\n")
         self.generate()
-        config = (self.output / "alpha-mac.yaml").read_text()
+        config = (self.output / self.client / "alpha.yaml").read_text()
         self.assertNotIn("🇨🇳 国内流量", config)
         self.assertNotIn("nameserver-policy:", config)
         self.assertIn("IP-CIDR,223.5.5.5/32,🤖 AI 隐私出口,no-resolve", config)
 
     def test_ai_dependencies_are_preserved_before_ad_blocking(self):
         self.generate()
-        rules = (self.output / "alpha-mac.yaml").read_text().split("\nrules:\n")[1]
+        rules = (self.output / self.client / "alpha.yaml").read_text().split("\nrules:\n")[1]
         ads = rules.index("RULE-SET,ads-lite,")
         for dependency in ("DOMAIN,rum.browser-intake-datadoghq.com,", "DOMAIN,o207216.ingest.sentry.io,", "DOMAIN,o33249.ingest.sentry.io,",
                            "DOMAIN,cdn.workos.com,", "DOMAIN,humb.apple.com,", "DOMAIN,js.stripe.com,"):
@@ -140,7 +141,7 @@ class SafetyRegressions(unittest.TestCase):
     def test_client_fields_and_anytls_acme_are_independent(self):
         self.add_conf("HY2_UP=30 mbps\nHY2_DOWN=0.2 gbps\nHY2_ACME_ENABLE=true\nHY2_ACME_DOMAIN=hy2.example.com\n")
         self.generate()
-        stash = (self.output / "alpha-mac.yaml").read_text()
+        stash = (self.output / self.client / "alpha.yaml").read_text()
         self.assertIn("up-speed: 30", stash)
         self.assertIn("down-speed: 200", stash)
         self.assertIn("  follow-rule: true", stash)
@@ -151,7 +152,7 @@ class SafetyRegressions(unittest.TestCase):
         self.assertIn("skip-cert-verify: true", anytls)
         self.assertNotIn("hy2.example.com", anytls)
         self.generate("--client", "mihomo")
-        mihomo = (self.output / "alpha-mac.yaml").read_text()
+        mihomo = (self.output / self.client / "alpha.yaml").read_text()
         self.assertIn('up: "30 mbps"', mihomo)
         self.assertIn("respect-rules: true", mihomo)
         self.assertNotIn("follow-rule:", mihomo)
@@ -162,41 +163,66 @@ class SafetyRegressions(unittest.TestCase):
         with self.secrets.open("a") as handle:
             handle.write("HY2_CERT_SHA256=" + "ab" * 32 + "\n")
         self.generate()
-        self.assertIn("server-cert-fingerprint:", (self.output / "alpha-mac.yaml").read_text())
+        self.assertIn("server-cert-fingerprint:", (self.output / self.client / "alpha.yaml").read_text())
         self.generate("--client", "mihomo")
-        text = (self.output / "alpha-mac.yaml").read_text()
+        text = (self.output / self.client / "alpha.yaml").read_text()
         self.assertIn("    fingerprint:", text)
         self.assertNotIn("server-cert-fingerprint:", text)
 
     def test_prefix_collision_does_not_delete_other_profile(self):
         self.env["NETWORK_NODE_PROFILE"] = "alpha-next"
         self.generate()
-        other = self.output / "alpha-next-mac.yaml"
+        other = self.output / self.client / "alpha-next.yaml"
         before = other.read_bytes()
         self.env["NETWORK_NODE_PROFILE"] = "alpha"
         self.generate()
         self.assertEqual(other.read_bytes(), before)
-        self.assertTrue((self.output / "alpha-mac.yaml").exists())
+        self.assertTrue((self.output / self.client / "alpha.yaml").exists())
 
     def test_collision_rejected_before_overwriting_existing_owner(self):
         self.generate()
-        before = (self.output / "alpha-mac.yaml").read_bytes()
+        before = (self.output / self.client / "alpha.yaml").read_bytes()
         self.env["NETWORK_NODE_PROFILE"] = "beta"
         self.add_conf("CLIENT_FILE_PREFIX=alpha\n")
         result = self.generate(success=False)
         self.assertNotEqual(result.returncode, 0)
-        self.assertEqual((self.output / "alpha-mac.yaml").read_bytes(), before)
+        self.assertEqual((self.output / self.client / "alpha.yaml").read_bytes(), before)
 
-    def test_only_owned_unchanged_stale_files_are_deleted(self):
+    def test_shared_identity_generates_both_without_mutating_accounts_or_legacy_files(self):
+        # Given existing per-device accounts and an old client file, rendering must
+        # produce exactly two new configs while preserving accounts and old imports.
+        before = self.secrets.read_bytes(), self.conf.read_bytes()
+        self.output.mkdir()
+        legacy = self.output / "alpha-phone.yaml"
+        legacy.write_text("legacy imported config\n")
         self.generate()
-        legacy = self.output / "alpha-old.yaml"
-        legacy.write_text("unowned\n")
-        self.add_conf("DEVICES=mac\n")
+        for client in ("stash", "mihomo"):
+            files = list((self.output / client).glob("*.yaml"))
+            self.assertEqual([p.name for p in files], ["alpha.yaml"])
+            text = files[0].read_text()
+            self.assertIn("test-mac", text)
+            self.assertNotIn("test-phone", text)
+        self.assertEqual(before, (self.secrets.read_bytes(), self.conf.read_bytes()))
+        self.assertEqual(legacy.read_text(), "legacy imported config\n")
+
+    def test_selected_identity_and_client_preserve_other_client(self):
+        self.generate()
+        stash = self.output / "stash" / "alpha.yaml"
+        before = stash.read_bytes()
+        self.generate("--client", "mihomo", "--identity", "phone")
+        self.assertEqual(stash.read_bytes(), before)
+        config = (self.output / "mihomo" / "alpha.yaml").read_text()
+        self.assertIn("test-phone", config)
+        self.assertNotIn("test-mac", config)
         self.assertNotEqual(self.generate("--check", success=False).returncode, 0)
-        self.assertTrue((self.output / "alpha-phone.yaml").exists())
+
+    def test_invalid_identity_or_incompatible_second_target_preserves_outputs(self):
         self.generate()
-        self.assertFalse((self.output / "alpha-phone.yaml").exists())
-        self.assertEqual(legacy.read_text(), "unowned\n")
+        before = {p: p.read_bytes() for p in self.output.rglob("*") if p.is_file()}
+        self.assertNotEqual(self.generate("--identity", "../unknown", success=False).returncode, 0)
+        self.add_conf("HY2_HOP_INTERVAL=15-30\n")
+        self.assertNotEqual(self.generate(success=False).returncode, 0)
+        self.assertEqual(before, {p: p.read_bytes() for p in self.output.rglob("*") if p.is_file()})
 
     def test_check_detects_drift_without_writing(self):
         result = self.generate("--check", success=False)
@@ -204,10 +230,10 @@ class SafetyRegressions(unittest.TestCase):
         self.assertFalse(self.output.exists())
         self.generate()
         self.generate("--check")
-        snapshot = {p.name: p.read_bytes() for p in self.output.iterdir()}
+        snapshot = {str(p.relative_to(self.output)): p.read_bytes() for p in self.output.rglob("*") if p.is_file()}
         self.add_conf("AI_STRICT_MODE=true\n")
         self.assertNotEqual(self.generate("--check", success=False).returncode, 0)
-        self.assertEqual(snapshot, {p.name: p.read_bytes() for p in self.output.iterdir()})
+        self.assertEqual(snapshot, {str(p.relative_to(self.output)): p.read_bytes() for p in self.output.rglob("*") if p.is_file()})
 
     def test_disabled_profile_does_not_recreate_or_change_outputs(self):
         self.add_conf("CLIENT_CONFIG_ENABLE=false\n")
@@ -216,10 +242,10 @@ class SafetyRegressions(unittest.TestCase):
         self.assertFalse(self.output.exists())
         self.add_conf("CLIENT_CONFIG_ENABLE=true\n")
         self.generate()
-        snapshot = {p.name: p.read_bytes() for p in self.output.iterdir()}
+        snapshot = {str(p.relative_to(self.output)): p.read_bytes() for p in self.output.rglob("*") if p.is_file()}
         self.add_conf("CLIENT_CONFIG_ENABLE=false\n")
         self.generate()
-        self.assertEqual(snapshot, {p.name: p.read_bytes() for p in self.output.iterdir()})
+        self.assertEqual(snapshot, {str(p.relative_to(self.output)): p.read_bytes() for p in self.output.rglob("*") if p.is_file()})
 
     def test_explicit_port_overrides_state_and_empty_reuses_state(self):
         self.add_conf("HY2_PORT=32000\n")

@@ -1,0 +1,14 @@
+{
+  "name": "network-node-subscription",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test test.mjs",
+    "deploy": "wrangler deploy",
+    "check": "wrangler deploy --dry-run"
+  },
+  "devDependencies": {
+    "wrangler": "4.139.0",
+    "miniflare": "5.20260923.0-alpha"
+  }
+}

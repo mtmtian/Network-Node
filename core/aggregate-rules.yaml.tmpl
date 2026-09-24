@@ -1,0 +1,90 @@
+  # 1. 本机与局域网
+  - DOMAIN,localhost,DIRECT
+  - DOMAIN-SUFFIX,local,DIRECT
+  - DOMAIN-SUFFIX,lan,DIRECT
+  - IP-CIDR,127.0.0.0/8,DIRECT,no-resolve
+  - IP-CIDR,10.0.0.0/8,DIRECT,no-resolve
+  - IP-CIDR,172.16.0.0/12,DIRECT,no-resolve
+  - IP-CIDR,192.168.0.0/16,DIRECT,no-resolve
+  - IP-CIDR,169.254.0.0/16,DIRECT,no-resolve
+  - IP-CIDR,100.64.0.0/10,DIRECT,no-resolve
+  - IP-CIDR6,::1/128,DIRECT,no-resolve
+  - IP-CIDR6,fc00::/7,DIRECT,no-resolve
+  - IP-CIDR6,fe80::/10,DIRECT,no-resolve
+
+  - RULE-SET,private,DIRECT
+
+  - RULE-SET,private-ip,DIRECT,no-resolve
+
+  - GEOIP,LAN,DIRECT,no-resolve
+
+  # 2. DNS 基础设施与规则下载
+  - IP-CIDR,1.1.1.1/32,{AI},no-resolve
+  - IP-CIDR,1.0.0.1/32,{AI},no-resolve
+  - IP-CIDR,9.9.9.9/32,{SENSITIVE},no-resolve
+  - IP-CIDR,149.112.112.112/32,{SENSITIVE},no-resolve
+  - IP-CIDR,223.5.5.5/32,{CN},no-resolve
+  - IP-CIDR,120.53.53.53/32,{CN},no-resolve
+  - DOMAIN-SUFFIX,raw.githubusercontent.com,{SENSITIVE}
+
+  # 3. 敏感服务：应用、AI、Meta 商业与广告
+{APP_RULES}
+{SENSITIVE_RULES}
+  - DOMAIN-KEYWORD,stun,{AI}
+  - IP-CIDR,160.79.104.0/21,{AI},no-resolve
+  - IP-CIDR6,2607:6bc0::/32,{AI},no-resolve
+  - IP-ASN,399358,{AI},no-resolve
+  - GEOSITE,category-ntp,{AI}
+  - DST-PORT,123,{AI}
+{META_RULES}
+{BUSINESS_RULES}
+  - RULE-SET,facebook,{AI}
+  - RULE-SET,instagram,{AI}
+  - RULE-SET,whatsapp,{AI}
+  - RULE-SET,ai,{AI}
+  - RULE-SET,tiktok,{SENSITIVE}
+
+  # 4. Apple 海外能力与业务依赖
+  - RULE-SET,siri,{SENSITIVE}
+  - DOMAIN,guzzoni.smoot.apple.com,{SENSITIVE}
+  - DOMAIN,probe.siri.apple.com,{SENSITIVE}
+  - DOMAIN,seed.siri.apple.com,{SENSITIVE}
+  - DOMAIN,seed-sequoia.siri.apple.com,{SENSITIVE}
+  - DOMAIN,seed-swallow.siri.apple.com,{SENSITIVE}
+  - DOMAIN,sequoia.apple.com,{SENSITIVE}
+  - DOMAIN,swallow.apple.com,{SENSITIVE}
+  - RULE-SET,icloud-private-relay,{SENSITIVE}
+  - DOMAIN-SUFFIX,applovin.com,{SENSITIVE}
+  - DOMAIN-SUFFIX,applvn.com,{SENSITIVE}
+  - DOMAIN-SUFFIX,applovinedge.com,{SENSITIVE}
+  - DOMAIN-SUFFIX,appsflyer.com,{SENSITIVE}
+  - DOMAIN-SUFFIX,adjust.com,{SENSITIVE}
+  - DOMAIN-SUFFIX,adj.st,{SENSITIVE}
+  - DOMAIN-SUFFIX,kochava.com,{SENSITIVE}
+  - DOMAIN-SUFFIX,branch.io,{SENSITIVE}
+  - DOMAIN-SUFFIX,singular.net,{SENSITIVE}
+  - DOMAIN-SUFFIX,ads.google.com,{SENSITIVE}
+  - DOMAIN-SUFFIX,adwords.google.com,{SENSITIVE}
+  - DOMAIN-SUFFIX,analytics.google.com,{SENSITIVE}
+  - DOMAIN-SUFFIX,googletagmanager.com,{SENSITIVE}
+  - DOMAIN-SUFFIX,googleadservices.com,{SENSITIVE}
+  - DOMAIN-SUFFIX,googlesyndication.com,{SENSITIVE}
+  - DOMAIN-SUFFIX,googletagservices.com,{SENSITIVE}
+  - DOMAIN-SUFFIX,ads.tiktok.com,{SENSITIVE}
+  - DOMAIN-SUFFIX,business.tiktok.com,{SENSITIVE}
+
+  # 5. 广告拦截
+  - RULE-SET,ads-lite,{ADS}
+
+  # 6. 国内白名单优先直连；Apple 其余请求保护
+  - RULE-SET,apple-cn,{CN}
+  - RULE-SET,icloud,{APPLE}
+  - RULE-SET,cn,{CN}
+
+  # 7. 普通海外：本地例外 + 固定版本服务规则集
+{ORDINARY_EXCLUSIONS}
+{ORDINARY_LOCAL_RULES}
+{ORDINARY_RULESET_RULES}
+
+  # 8. 未知流量：敏感主备，绝不进入测速或直连
+  - MATCH,{SENSITIVE}
