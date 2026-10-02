@@ -43,10 +43,7 @@ jobs:
       - name: Install test dependencies
         run: python3 -m pip install -r requirements-test.txt
 
-      - name: Run unit tests
-        run: python3 -m unittest discover -s tests -p 'test_*.py' -v
-
-      - name: Validate with pinned Mihomo
+      - name: Prepare pinned Mihomo
         run: |
           curl --fail --location --retry 3 --max-time 120 \
             https://github.com/MetaCubeX/mihomo/releases/download/v1.19.30/mihomo-linux-amd64-compatible-v1.19.30.gz \
@@ -62,10 +59,12 @@ jobs:
               "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/2df2f6281aa2d14d54b8a099b9326f63ba389fd4/$source_name" \
               --output "$RUNNER_TEMP/mihomo-data/$target_name"
           done
-          export MIHOMO_BIN="$RUNNER_TEMP/mihomo"
-          export MIHOMO_DATA_DIR="$RUNNER_TEMP/mihomo-data"
-          python3 -m unittest discover -s tests -p 'test_mihomo_config.py' -v
-          python3 -m unittest discover -s tests -p 'test_aggregate*.py' -v
+
+      - name: Run Python tests
+        env:
+          MIHOMO_BIN: ${{ runner.temp }}/mihomo
+          MIHOMO_DATA_DIR: ${{ runner.temp }}/mihomo-data
+        run: python3 -m unittest discover -s tests -p 'test_*.py' -v
 
   subscription:
     name: Validate private subscription Worker
