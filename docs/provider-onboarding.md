@@ -43,6 +43,8 @@ When only promotional credits are expiring, prefer changing the billing account 
 
 Changing the billing link keeps the VM, IP, credentials, and client YAML. Verify the new billing association and node connectivity, then save the intended administration account as `GCP_ACCOUNT`. Do not delete the old VM or project as a billing migration step. Charges incurred before the switch remain on the original billing account; monthly credits and budget alerts do not impose a hard spending cap.
 
+See [GCP billing and monthly credits](gcp-billing.md) for subscriber eligibility, automatic credit application, cost estimation, and checking both billing accounts after a migration. Keep personal account and billing identifiers in local state, not in these shared documents.
+
 ## Adding another provider lifecycle
 
 Use `deploy-vps.sh` when the provider already exposes a reachable Debian/Ubuntu host. Add a new adapter under `providers/` only when the provider needs different lifecycle, authentication, or firewall operations. Keep shared protocol installation, secrets, routing, and client generation in `core/`.

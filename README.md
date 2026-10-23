@@ -62,6 +62,8 @@ VPS adapter 会执行以下安全步骤：
 
 GCP 节点通过 `./deploy-gcp.sh` 管理，与普通 VPS 共用协议和分流配置。GCP profile 保存 `GCP_ACCOUNT`，后续操作固定使用该账号；更换赠金账户可以改绑现有项目的结算账户，无需重建服务器。流程见 [Provider Onboarding](docs/provider-onboarding.md#google-cloud-account-and-billing-changes)。
 
+Google AI Pro 的每月 Cloud 赠金需在订阅者的 Developer Program 中绑定结算账户，不能通过家庭共享继承。费用估算、赠金自动入账与迁移后的账单核对见 [GCP Billing](docs/gcp-billing.md)。
+
 ## 目录结构
 
 ```text
