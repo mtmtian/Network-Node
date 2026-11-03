@@ -2,6 +2,29 @@
 import re
 
 
+LIGHTPANDA_PRIVATE_CIDRS = (
+    '0.0.0.0/8', '127.0.0.0/8', '10.0.0.0/8', '172.16.0.0/12',
+    '192.168.0.0/16', '169.254.0.0/16', '100.64.0.0/10',
+    '::1/128', 'fc00::/7', 'fe80::/10',
+)
+
+
+def protect_lightpanda(config, target):
+    """Prepend the Mihomo guard after all routing/strict-mode transformations.
+
+    The process condition comes first, so other processes do not trigger DNS
+    resolution here. IP conditions deliberately omit no-resolve: fake-IP hides
+    private destinations from lightpanda-safe. Stash is returned unchanged.
+    """
+    if target != 'mihomo':
+        return config
+    rules = ''.join(
+        f'  - AND,((PROCESS-NAME,lightpanda),({"IP-CIDR6" if ":" in cidr else "IP-CIDR"},{cidr})),REJECT\n'
+        for cidr in LIGHTPANDA_PRIVATE_CIDRS)
+    header, existing_rules = config.split('\nrules:\n', 1)
+    return header + '\nrules:\n' + rules + existing_rules
+
+
 def remove_section(config, start, end):
     first = config.index(start)
     last = config.index(end, first)

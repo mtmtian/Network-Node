@@ -14,7 +14,7 @@ import sys
 import tempfile
 
 from client_output import atomic_write, write_outputs
-from client_policy import adapt_config
+from client_policy import adapt_config, protect_lightpanda
 from client_snapshot import snapshot_nodes
 from sensitive_policy import domain_rules, app_rules
 from ordinary_policy import ordinary_rules, ordinary_providers
@@ -278,9 +278,10 @@ def compose(profile, device, target, nodes, sensitive):
             '    - 192.168.0.0/16\n    - 169.254.0.0/16\n    - 100.64.0.0/10\n'
             '    - ::1/128\n    - fc00::/7\n    - fe80::/10\n'
             '  dns-hijack:\n')
-    return (header + '\n\nproxies:\n' + '\n'.join(nodes.values()) + '\n'
-            + groups(nodes, sensitive, target) + 'rule-providers:\n' + providers
-            + '\nrules:\n' + rules)
+    config = (header + '\n\nproxies:\n' + '\n'.join(nodes.values()) + '\n'
+              + groups(nodes, sensitive, target) + 'rule-providers:\n' + providers
+              + '\nrules:\n' + rules)
+    return protect_lightpanda(config, target)
 
 
 def standalone_selections(available, sensitive):
