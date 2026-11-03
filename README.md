@@ -131,7 +131,7 @@ GCP 和 VPS 真正变化的只有服务器生命周期、连接方式与防火�
 
 ## 导入客户端
 
-多服务器日常分流使用 [双客户端汇总与白名单分流](docs/aggregate-routing.md)：默认同时生成 Stash / Mihomo 两份文件，AI 等敏感服务走指定主备，国内域名白名单直连，明确列出的普通海外服务走自动测速，其余 TCP/UDP 由敏感主备兜底。共享身份计划不区分 Mac/iPhone 输出，Stash 可显式发布到 iCloud；Mihomo 可发布到 [Cloudflare 私有 HTTPS 订阅](cloud/subscription/README.md)，通过钥匙串令牌复制链接或一键导入。
+多服务器日常分流使用 [双客户端汇总与白名单分流](docs/aggregate-routing.md)：默认同时生成 Stash / Mihomo 两份文件，AI 等敏感服务走指定主备，国内域名白名单直连，明确列出的普通海外服务走自动测速，其余 TCP/UDP 由敏感主备兜底。Mihomo 主订阅可显式启用 `mihomo_main_policy: daily`，保留其 Apple、DNS 与普通海外兜底策略，Stash 和单服务器仍保持原策略。共享身份计划不区分 Mac/iPhone 输出，Stash 可显式发布到 iCloud；Mihomo 可发布到 [Cloudflare 私有 HTTPS 订阅](cloud/subscription/README.md)，通过钥匙串令牌复制链接或一键导入。
 
 部署成功后，每个平台默认得到两份名称明确的 YAML：
 
