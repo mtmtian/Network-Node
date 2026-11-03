@@ -149,8 +149,15 @@ VPS_PROFILE=routing .venv/bin/python tests/subscription_policy_probe.py \
   --profile routing --server cstone --server lax --server gcloud
 ```
 
-用户确认更新订阅后，下载缓存已变为 403 条，完整配置对象与本地生成源相等。更新时旧增强叠加为 413 条/20 条 Lightpanda 规则；核对缓存已含 10 条保护后，清空本次加入的 prepend，append/delete 及其他字段不变。当前生成文件及内核仍为 413/20，保护有效但有重复；等待用户点击「重新激活订阅」，再核对 403/10 并重跑流量验收。未改写 Clash 自动生成文件，未把此最后一步计入完成。
+用户确认更新订阅后，下载缓存已变为 403 条，完整配置对象与本地生成源相等。更新时旧增强叠加为 413 条/20 条 Lightpanda 规则；核对缓存已含 10 条保护后，清空本次加入的 prepend，append/delete 及其他字段不变。用户再次确认「重新激活订阅」后，Clash 自动生成文件与运行内核均恢复为 **403 条规则 / 10 条置顶保护**；未手工改写其生成文件。本地增强 prepend 为空，保护已由订阅接管。
 
 收尾边界：PR #24 未合并，保留当前分支以供审阅；只存在当前一个 worktree。原有 profiles、部署元数据、依赖环境及未审计缓存均保留。共享生成器按原有归属清单及未修改哈希，替换并移除本轮生成过的旧 Mihomo `routing-mac.yaml` / `routing-iphone.yaml`；未做额外的历史文件清场。记忆与其他项目不在本次写入范围。
 
 代码提交 `65d5a98` 的两路 Thermos 审查均为 0 blocking / 0 non-blocking；[两项 CI](https://github.com/mtmtian/Network-Node/actions/runs/41686570296) 通过。末次模板说明调整后，29 项汇总定向测试再次通过且无跳过。用于比对的 3 个临时 JSON 与 2 个测试日志共 537,389 字节，仅含构造样本、哈希和测试输出；用户在看过清场清单后明确确认删除，5 个文件均已删除并核对不存在。正式验收证据保留在本文、测试及 PR/CI。
+
+
+### 订阅接管后的最终运行验收
+
+2026-11-04 用户重新激活后，API 读回实际运行版本为 **Mihomo v1.19.33**（此前本机加固验收是 v1.19.32）；rule 模式、TUN 和 strict 进程识别均开启。订阅缓存完整配置对象等于本地生成源，Clash 生成规则也相等；全部 403 条运行规则的类型、payload、出口及顺序逐条匹配，API 的 AND 表达及 GEOIP 大小写规范化已纳入比较。
+
+再次执行 `.venv/bin/python tests/lightpanda_live_probe.py --expect blocked --public` 成功：Lightpanda 访问受控的 `localhost.weixin.qq.com` 为 GotNothing，测试服务没有收到请求；直接 IP、localhost、ptlogin 域名仍为 CouldntConnect 且无请求。curl 对同一服务得到 HTTP 200 和测试标记；Lightpanda 公开 JS 引文页返回 HTTP 200 且取得渲染引文。临时服务已关闭。**订阅下载、增强去重、重新激活与实际流量验收均已完成**；其他机器、Wi-Fi 切换及逐个桌面应用仍不在此次实测范围。
