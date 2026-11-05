@@ -2,7 +2,9 @@
 
 `aggregate.py` 从明确列出的本地源 profile 生成客户端配置，默认同时输出 Stash 和 Mihomo（Clash Verge Rev）。共用节点来源与分流意图，各自输出原生字段。生成不部署服务器、不切换客户端；发布是显式操作。
 
-## 分流约定
+## 默认严格策略的分流约定
+
+以下约定适用于默认的 `mihomo_main_policy: strict`、Stash 及单服务器文件。显式启用 Mihomo 主配置的 `daily` 策略时，差异见下节；不要把默认严格策略覆盖到已启用 daily 的线上主订阅。
 
 | 顺序 | 流量 | 默认出口 |
 |---|---|---|
@@ -73,11 +75,29 @@ python3 aggregate.py render --profile routing
 
 两个客户端完整生成后才开始写出；每个客户端分别维护归属清单。持有所有源 profile 的操作锁，避免混入部署/换 IP 中间状态。生成失败保留旧输出；磁盘故障时逐文件原子替换不构成跨文件事务，应修复后重新 render/check。
 
+## Mihomo 主订阅的现役日常策略
+
+共享计划可添加 `"mihomo_main_policy": "daily"`；合法值只有 `strict`（默认）和 `daily`，拼写错误停止生成。该字段仅作用于 **Mihomo 主配置**；Stash、单服务器输出及单节点生成器保持各自原策略。它用于维护已有云端主订阅的路由，不从云端 YAML 导入凭据或复制一套完整配置。
+
+| 项目 | daily 主配置 |
+|---|---|
+| 敏感出口 | 仍只允许计划中的指定节点；使用 select 手动选择，不自动 fallback |
+| AI 优先规则 | 增补 Apple AI relay、Microsoft/Copilot 认证、X、Google AI 端点及 ChatGPT 实时连接依赖 |
+| Apple | AI/Siri 特例优先；基础服务组默认 DIRECT，可选普通海外或敏感服务；Private Relay 走普通海外 |
+| 国内与兜底 | 普通海外明确规则之后，`cn-ip` / `GEOIP,CN` 走国内组；最后 MATCH 普通海外 |
+| DNS | AI 用 Cloudflare，敏感业务用 Quad9，普通海外用 Google，Apple 基础服务/国内用国内解析器；按规则派生精确域名策略 |
+| 规则下载 | 所有 rule-provider 与 raw.githubusercontent.com 使用普通海外 |
+| Lightpanda | 10 条进程限定的私网拒绝规则仍置顶 |
+
+与默认严格主配置相比，daily 增加 46 条规则并替换 3 条出口，保留原有规则的相对顺序。实现入口为 `core/aggregate_daily.py` 与共用的 `core/aggregate-rules.yaml.tmpl`；普通服务域名仍来自原清单，没有第二份副本。更改清单时，生产基线哈希测试会提示评估路由差异，不应直接更新期望值来消除失败。
+
+本机 routing 计划已迁移到共享 mac 凭据身份、开启 standalone 和 daily；源服务器配置、账号清单不变。此次仅 render Mihomo。已有 Stash 成品与 iCloud 文件未改写；未来显式 render Stash 会按共享计划生成共享文件名，不再生成两份设备文件，执行前应核对设备使用情况。
+
 ## 按主配置节点生成单服务器文件
 
 共享计划设置 `"standalone": true` 后，默认 render 同时生成主配置与每个服务器别名的独立文件，每份都有 Stash / Mihomo 两种格式。例如 `routing-cstone.yaml`、`routing-lax.yaml`、`routing-gcloud.yaml`；文件名的 routing 表示来自主配置，后缀是服务器名，不是设备名。
 
-单服务器文件直接复用主配置当次生成的节点、凭据、DNS、规则与规则集，不再从旧部署目录另取一份节点。每个节点必须采用合法的 `server/protocol` 名称；会检查每台服务器可用的 Reality/CDN 敏感出口，无可用出口则停止生成。AI 优先复用主配置在该服务器上指定的线路；该服务器不在主配置敏感主备中时，单机文件使用其 Reality/CDN。这只是单机使用方式，不代表该出口具有住宅属性或已通过 AI 账号风控。单机文件无法提供跨服务器主备；主配置仍是日常推荐。
+单服务器文件直接复用主配置当次生成的节点与凭据，不再从旧部署目录另取一份节点。默认与严格主配置共用 DNS、规则和规则集；启用 daily 时，仅主配置使用日常策略，单服务器仍保持严格策略。每个节点必须采用合法的 `server/protocol` 名称；会检查每台服务器可用的 Reality/CDN 敏感出口，无可用出口则停止生成。AI 优先复用主配置在该服务器上指定的线路；该服务器不在主配置敏感主备中时，单机文件使用其 Reality/CDN。这只是单机使用方式，不代表该出口具有住宅属性或已通过 AI 账号风控。单机文件无法提供跨服务器主备；主配置仍是日常推荐。
 
 ```bash
 python3 aggregate.py render --profile routing

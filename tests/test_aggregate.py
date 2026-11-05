@@ -543,7 +543,11 @@ class AggregateTest(unittest.TestCase):
                 rules = data['rules']
                 for rule in rules:
                     fields = rule.split(',')
-                    self.assertIn(fields[1 if fields[0] == 'MATCH' else 2], allowed)
+                    # Logical payloads contain commas; validate their outbound
+                    # after the closing parentheses, rather than a subcondition.
+                    outbound = (rule.rsplit(',', 1)[1] if fields[0] == 'AND'
+                                else fields[1 if fields[0] == 'MATCH' else 2])
+                    self.assertIn(outbound, allowed)
                     if fields[0] == 'RULE-SET':
                         self.assertIn(fields[1], data['rule-providers'])
                 self.assertEqual(rules[-1], f'MATCH,{aggregate.SENSITIVE}')

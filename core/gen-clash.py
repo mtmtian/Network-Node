@@ -17,7 +17,7 @@ import argparse
 import hashlib
 from settings import FILE_PREFIX_PATTERN, load_settings, validate
 from client_output import write_outputs
-from client_policy import adapt_config
+from client_policy import adapt_config, protect_lightpanda
 from sensitive_policy import domain_rules, app_rules
 
 parser = argparse.ArgumentParser(description=__doc__)
@@ -329,6 +329,7 @@ for CLIENT_TARGET in targets:
         **env,
     )
     yaml = adapt_config(yaml, CLIENT_TARGET, AI_STRICT_MODE, ai_nodes)
+    yaml = protect_lightpanda(yaml, CLIENT_TARGET)
     rendered[OUT_DIR / CLIENT_TARGET / f"{FILE_PREFIX}.yaml"] = yaml
 
 try:
