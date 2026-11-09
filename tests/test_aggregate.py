@@ -369,6 +369,8 @@ class AggregateTest(unittest.TestCase):
                     'platform.claude.com', 'mcp-proxy.anthropic.com', 'downloads.claude.ai',
                     'bridge.claudeusercontent.com', 'a.frame.claudeusercontent.com',
                     'assets-proxy.anthropic.com', 'a.livepreview.claude.app',
+                    'muse.ai', 'www.muse.ai', 'grokbot.com', 'mail.grokbot.com',
+                    'grokipedia.com', 'www.grokipedia.com',
                     'http-intake.logs.us5.datadoghq.com', 'cdnjs.cloudflare.com',
                     'cdn.jsdelivr.net', 'cdn.tailwindcss.com', 'code.jquery.com',
                     'unpkg.com', 'fonts.googleapis.com', 'fonts.gstatic.com')
@@ -383,10 +385,32 @@ class AggregateTest(unittest.TestCase):
                     self.assertEqual(value, ['https://1.1.1.1/dns-query', 'https://1.0.0.1/dns-query'])
         for host in ('storage.googleapis.com', 'maps.googleapis.com', 'www.gstatic.com',
                      'unrelated.sentry.io', 'datadog-unrelated.example', 'sift-example.com',
-                     'api.deepseek.com', 'doubao.com', 'api.spotify.com'):
+                     'api.deepseek.com', 'doubao.com', 'api.spotify.com',
+                     'notmuse.ai', 'notgrokbot.com', 'notgrokipedia.com',
+                     'muse.ai.attacker.example', 'grokbot.com.attacker.example',
+                     'grokipedia.com.attacker.example'):
             self.assertFalse(sensitive(host), host)
         for keyword in ('datadog', 'sentry', 'sift'):
             self.assertFalse(any(r[:2] == ['DOMAIN-KEYWORD', keyword] for r in rules))
+
+    @unittest.skipUnless(yaml, 'PyYAML required')
+    def test_ai_product_anchors_precede_dynamic_and_cn_rules_on_both_clients(self):
+        # These critical products must not depend on a downloaded AI provider.
+        self.shared_plan()
+        self.generate()
+        for target in ('stash', 'mihomo'):
+            data = yaml.safe_load(self.output(target=target).read_text())
+            rules = data['rules']
+            for host in ('muse.ai', 'grokbot.com', 'grokipedia.com'):
+                with self.subTest(target=target, host=host):
+                    rule = f'DOMAIN-SUFFIX,{host},{aggregate.AI}'
+                    self.assertEqual(rules.count(rule), 1)
+                    for later in (f'RULE-SET,ai,{aggregate.AI}',
+                                  f'RULE-SET,cn,{aggregate.CN}',
+                                  f'DOMAIN-SUFFIX,youtube.com,{aggregate.OVERSEAS}'):
+                        self.assertLess(rules.index(rule), rules.index(later))
+                    self.assertEqual(data['dns']['nameserver-policy']['+.' + host],
+                                     ['https://1.1.1.1/dns-query', 'https://1.0.0.1/dns-query'])
 
     @unittest.skipUnless(yaml, 'PyYAML required')
     def test_antigravity_bundle_routes_are_mac_only_and_client_specific(self):

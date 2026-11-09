@@ -89,6 +89,8 @@
       "codeiumdata.com",
       "githubcopilot.com",
       "grok.com",
+      "grokbot.com",
+      "grokipedia.com",
       "x.ai",
       "openrouter.ai",
       "huggingface.co"
@@ -157,5 +159,9 @@
       "fonts.googleapis.com",
       "fonts.gstatic.com"
     ]
+  },
+  "muse": {
+    "suffixes": ["muse.ai"],
+    "domains": []
   }
 }

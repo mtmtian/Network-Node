@@ -36,7 +36,7 @@ class AggregateDailyTest(unittest.TestCase):
                 self.assertEqual(before[name], after[name], name)
         main = after['mihomo/routing.yaml']
         self.assertEqual(main['proxies'], before['mihomo/routing.yaml']['proxies'])
-        self.assertEqual(len(main['rules']), 403)
+        self.assertEqual(len(main['rules']), 406)
         self.assertEqual(sum('lightpanda' in rule for rule in main['rules']), 10)
         self.assertEqual(main['rules'][-3:], ['RULE-SET,cn-ip,🇨🇳 国内流量',
                                              'GEOIP,CN,🇨🇳 国内流量', 'MATCH,🌐 普通海外'])
@@ -44,10 +44,12 @@ class AggregateDailyTest(unittest.TestCase):
                         main['rules'].index('DOMAIN-SUFFIX,apple.com,🍎 Apple 基础服务'))
         self.assertEqual(main['dns']['nameserver'], ['https://8.8.8.8/dns-query', 'https://8.8.4.4/dns-query'])
         # Independent 2026-11-04 production baseline, captured BEFORE implementation.
+        # 2026-11-09: rules/DNS add only muse.ai, grokbot.com and grokipedia.com;
+        # fixed-fixture comparison verified all other fields and rule order unchanged.
         # Canonical JSON hashes cover every field and rule position, not credentials.
         expected = {
-            'rules': '10c79d1bfd10d584423f5cd69b1a88245ada0896bf9b83124ab715571d7f58f9',
-            'dns': '438a632a38e692cf715ef70ecd4e079452764838191faa93c880dba40995c4db',
+            'rules': 'b70a08a233c982e025ed713a8e0e91f26f9cf4fbd4e6a5c3277b7e5f83147816',
+            'dns': '3fa6b74051c7e3e0f2a08e3043955033ffb7a99421d139b21c4a931931e2ee74',
             'rule-providers': '33888f3e51d297f73cfb603dab7b7d31ae5c559264eab07a4cf9b46bffb3a770',
             'proxy-groups': '09d5331a573248ae6c1e7d46a9be127f08ab5b68f1518cd0d151f35228a87503',
         }

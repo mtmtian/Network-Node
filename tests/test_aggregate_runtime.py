@@ -113,7 +113,10 @@ class AggregateRuntimeTest(unittest.TestCase):
                 provider.clear()
                 provider.update(type='file', behavior='domain', format='yaml', path=str(path))
                 continue
-            domains = {'cn': ['baidu.com', 'openai.com', 'reddit.com', 'tiktokshop.com'],
+            # AI deliberately omits the new products and CN overlaps them:
+            # only their static anchors can yield the expected PRIMARY exit.
+            domains = {'cn': ['baidu.com', 'openai.com', 'reddit.com', 'tiktokshop.com',
+                              'muse.ai', 'grokbot.com', 'grokipedia.com'],
                        'ai': ['openai.com', 'netflix.com'],
                        'apple-cn': ['apple.cn'], 'ads-lite': ['ads.test']}.get(name, ['unused.invalid'])
             path = root / f'{name}.yaml'
@@ -141,6 +144,8 @@ class AggregateRuntimeTest(unittest.TestCase):
                    'unknown-ai.googleapis.com', 'youtube.com.attacker.example', 'notyoutube.com',
                    'ads.google.com', 'business.facebook.com', 'seller.tiktokshop.com',
                    'seller.tiktokglobalshop.com', 'ads.tiktok.com', 'x.com', 'grok.com',
+                   'muse.ai', 'www.muse.ai', 'grokbot.com', 'mail.grokbot.com',
+                   'grokipedia.com', 'www.grokipedia.com',
                    'manager.line.biz', 'brightline.tv', 'future-service.bbc',
                    'api.anthropic.com', 'platform.claude.com', 'bridge.claudeusercontent.com',
                    'assets-proxy.anthropic.com', 'a.livepreview.claude.app',

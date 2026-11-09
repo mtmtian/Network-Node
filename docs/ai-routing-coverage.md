@@ -42,6 +42,14 @@ AI 动态集合继续复用 MetaCubeX `category-ai-!cn`；少量必须优先保�
 
 上述官方一方域名和补充依赖同时进入敏感流量规则与 DNS 策略，并由真实 Mihomo 隔离路由测试核对。官方表中的 GitHub/npm/Homebrew 等通用安装下载、用户连接的第三方 MCP、工具访问网站仍按各自规则分流；网络允许列表并不意味着它们都必须与模型 API 共用 IP。没有声称穷举未来域名，也未以路由测试代替 Claude 实际登录、长连接、账号风控或出口住宅属性验收。
 
+## 2026-11-09：Muse 与 Grok 产品补充
+
+补入 `muse.ai`、`grokbot.com`、`grokipedia.com` 三个后缀，覆盖根域及子域；来源分别是 [Muse 官网](https://muse.ai/)、[Grok Bot 官网](https://grokbot.com/)与 [xAI 产品说明](https://x.ai/bot)、[Grokipedia 官网](https://grokipedia.com/)。[Grok Bot 文档](https://docs.x.ai/grok-bot/computer-and-apps)还列出 `mail.grokbot.com`；Grokipedia 登录使用 `accounts.x.ai`。
+
+既有 `grok.com`、`x.ai` 后缀已覆盖主站、登录及 `api.x.ai`、`management-api.x.ai` 等 [官方 API 端点](https://docs.x.ai/developers/rest-api-reference/inference)，无需重复列子域。三个新增后缀同时生成 AI 分流与敏感 DNS 策略，并优先于动态 AI、国内与普通业务规则。
+
+本次核对的 [MetaCubeX 动态 AI 集合](https://github.com/MetaCubeX/meta-rules-dat/blob/meta/geo/geosite/category-ai-%21cn.list)已含这三个域名。仍保留每 86400 秒更新；静态锚点减少首次下载或缓存异常时对动态源的依赖。没有刷新前后证据，不能把此前 Muse 的路由疑问归因为社区更新延迟。规则生成与测试不代表现役客户端已重新加载，也不保证 Grok Bot 访问的第三方网站都走同一出口。
+
 ## 仍然存在的限制
 
 动态 AI MRS 集合与 DNS geosite 分别更新，可能短期不同步；静态清单保证已列出的必要域名，不承诺覆盖所有 AI、第三方登录、插件、自建 API、新增地区或临时 CDN。Azure OpenAI 与 AWS Bedrock 的所有租户/地区尚未穷举，避免为补 AI 而接管整个公有云。出现具体问题时用连接记录核对域名、进程、规则和实际出口。
