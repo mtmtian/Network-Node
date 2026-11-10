@@ -85,7 +85,7 @@ python3 aggregate.py render --profile routing
 | AI 优先规则 | 增补 Apple AI relay、Microsoft/Copilot 认证、X、Google AI 端点及 ChatGPT 实时连接依赖 |
 | Apple | AI/Siri 特例优先；基础服务组默认 DIRECT，可选普通海外或敏感服务；Private Relay 走普通海外 |
 | 国内与兜底 | 普通海外明确规则之后，`cn-ip` / `GEOIP,CN` 走国内组；最后 MATCH 普通海外 |
-| DNS | AI 用 Cloudflare，敏感业务用 Quad9，普通海外用 Google，Apple 基础服务/国内用国内解析器；按规则派生精确域名策略 |
+| DNS | AI 用 Cloudflare，敏感业务用 Quad9 与 DNS.SB 并行（任一家不可达时不拖慢解析），普通海外用 Google，Apple 基础服务/国内用国内解析器；按规则派生精确域名策略 |
 | 规则下载 | 所有 rule-provider 与 raw.githubusercontent.com 使用普通海外 |
 | Lightpanda | 10 条进程限定的私网拒绝规则仍置顶 |
 

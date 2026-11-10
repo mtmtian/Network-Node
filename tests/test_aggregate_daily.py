@@ -36,7 +36,7 @@ class AggregateDailyTest(unittest.TestCase):
                 self.assertEqual(before[name], after[name], name)
         main = after['mihomo/routing.yaml']
         self.assertEqual(main['proxies'], before['mihomo/routing.yaml']['proxies'])
-        self.assertEqual(len(main['rules']), 406)
+        self.assertEqual(len(main['rules']), 408)
         self.assertEqual(sum('lightpanda' in rule for rule in main['rules']), 10)
         self.assertEqual(main['rules'][-3:], ['RULE-SET,cn-ip,🇨🇳 国内流量',
                                              'GEOIP,CN,🇨🇳 国内流量', 'MATCH,🌐 普通海外'])
@@ -46,10 +46,12 @@ class AggregateDailyTest(unittest.TestCase):
         # Independent 2026-11-04 production baseline, captured BEFORE implementation.
         # 2026-11-09: rules/DNS add only muse.ai, grokbot.com and grokipedia.com;
         # fixed-fixture comparison verified all other fields and rule order unchanged.
+        # 2026-11-10: adds only two DNS.SB IP-CIDR rules and appends DNS.SB to each sensitive
+        # resolver list; fixed-fixture comparison verified nothing else changed.
         # Canonical JSON hashes cover every field and rule position, not credentials.
         expected = {
-            'rules': 'b70a08a233c982e025ed713a8e0e91f26f9cf4fbd4e6a5c3277b7e5f83147816',
-            'dns': '3fa6b74051c7e3e0f2a08e3043955033ffb7a99421d139b21c4a931931e2ee74',
+            'rules': '5e359ef9b55ea7c4e3766996818e7b2b72f76d73399d5a2a12172eecf51ab78c',
+            'dns': 'd1e01e076cd6fd4473f1abf581212c2746753b33c6e8218026ea7e26253ac584',
             'rule-providers': '33888f3e51d297f73cfb603dab7b7d31ae5c559264eab07a4cf9b46bffb3a770',
             'proxy-groups': '09d5331a573248ae6c1e7d46a9be127f08ab5b68f1518cd0d151f35228a87503',
         }

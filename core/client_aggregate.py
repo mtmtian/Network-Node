@@ -38,7 +38,8 @@ BUSINESS_DOMAINS = ('tiktok.com', 'tiktokshop.com', 'tiktokglobalshop.com', 'tik
                     'line.biz', 'linemyshop.com', 'lineshoppingseller.com', 'brightline.tv')
 DNS = {
     AI: ('1.1.1.1', '1.0.0.1'),
-    SENSITIVE: ('9.9.9.9', '149.112.112.112'),
+    # Two operators race in parallel, so one being unreachable from the exit no longer stalls each lookup.
+    SENSITIVE: ('9.9.9.9', '149.112.112.112', '185.222.222.222', '45.11.45.11'),
     CN: ('223.5.5.5', '120.53.53.53'),
 }
 
