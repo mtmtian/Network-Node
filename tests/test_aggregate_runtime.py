@@ -134,6 +134,8 @@ class AggregateRuntimeTest(unittest.TestCase):
                     'apple-relay.fastly-edge.com', 'cp4.cloudflare.com', 'guzzoni.smoot.apple.com'] if name == 'cn' else domains
                 domains = {'icloud': ['p01-contacts.icloud.com'],
                            'siri': ['guzzoni.apple.com'],
+                           'apple-cn': ['apple.cn', 'apps.apple.com', 'swcdn.apple.com',
+                                        'gspe35-ssl.ls.apple.com', 'cdn-cn1.apple-mapkit.com'],
                            'icloud-private-relay': ['mask.icloud.com']}.get(name, domains)
             path = root / f'{name}.yaml'
             path.write_text(fixtures.yaml.safe_dump({'payload': ['DOMAIN-SUFFIX,' + d for d in domains]}))
@@ -172,7 +174,9 @@ class AggregateRuntimeTest(unittest.TestCase):
             domains += ['apple-relay.apple.com', 'apple-relay.cloudflare.com',
                         'apple-relay.fastly-edge.com', 'cp4.cloudflare.com',
                         'guzzoni.smoot.apple.com', 'guzzoni.apple.com',
-                        'mask.icloud.com', 'p01-contacts.icloud.com']
+                        'mask.icloud.com', 'p01-contacts.icloud.com',
+                        'apps.apple.com', 'swcdn.apple.com', 'gspe35-ssl.ls.apple.com',
+                        'cdn-cn1.apple-mapkit.com']
         data['dns']['use-system-hosts'] = False
         data['dns']['listen'] = '127.0.0.1:0'
         for key in ('default-nameserver', 'nameserver', 'proxy-server-nameserver'):
@@ -260,6 +264,8 @@ class AggregateRuntimeTest(unittest.TestCase):
                 'unknown.example', 'unlisted.cn', 'unknown-ai.googleapis.com',
                 'youtube.com.attacker.example', 'notyoutube.com', 'x.com')})
             expected['p01-contacts.icloud.com'] = (502, '')
+            expected.update({host: (502, '') for host in (
+                'apps.apple.com', 'swcdn.apple.com', 'gspe35-ssl.ls.apple.com', 'cdn-cn1.apple-mapkit.com')})
         self.assertEqual(result, expected, '\n'.join(runtime_logs))
         self.assertIn('dial 🇨🇳 国内流量 (match RuleSet/cn)', runtime_logs[0])
         self.assertIn('dial 🇨🇳 国内流量 (match RuleSet/apple-cn)', runtime_logs[0])

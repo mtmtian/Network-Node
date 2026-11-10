@@ -288,7 +288,7 @@ def compose(profile, device, target, nodes, sensitive, *, main_policy='strict', 
         ORDINARY_EXCLUSIONS='\n'.join(f'  - DOMAIN-SUFFIX,{d},{SENSITIVE}'
                                       for d in ('bbc', 'bloomberg', 'hbo', 'playstation', 'xbox')),
         ORDINARY_LOCAL_RULES='', ORDINARY_RULESET_RULES=ordinary_refs.rstrip())
-    values.update(CAPTIVE_RULE='', OVERSEAS_DNS_RULES='', DAILY_AI_RULES='', APPLE_TIME_RULE='',
+    values.update(CAPTIVE_RULE='', OVERSEAS_DNS_RULES='', ADDITIONAL_AI_RULES='', APPLE_TIME_RULE='',
                   SIRI_RULE='', RELAY_RULES='', APPLE_RULES='', CN_IP_RULES='',
                   DOWNLOAD_POLICY=SENSITIVE, RELAY_POLICY=SENSITIVE, FINAL_POLICY=SENSITIVE)
     if daily:
