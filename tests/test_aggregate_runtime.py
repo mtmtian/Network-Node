@@ -24,6 +24,12 @@ import test_aggregate as fixtures
 class AggregateRuntimeTest(unittest.TestCase):
     maxDiff = None
     def test_real_engine_routes_requests_and_detects_wrong_fallback(self):
+        self.exercise_policy('strict')
+
+    def test_balanced_routes_apple_and_unknown_services(self):
+        self.exercise_policy('balanced')
+
+    def exercise_policy(self, policy):
         binary = os.environ.get('MIHOMO_BIN')
         assets = os.environ.get('MIHOMO_DATA_DIR')
         if not binary or not assets or not fixtures.yaml:
@@ -32,6 +38,10 @@ class AggregateRuntimeTest(unittest.TestCase):
         fixture.setUp()
         self.addCleanup(fixture.doCleanups)
         fixture.shared_plan()
+        fixture.plan['mihomo_main_policy'] = policy
+        if policy == 'balanced':
+            fixture.plan['mihomo_agy_proxy'] = 'gcloud/CDN'
+        fixture.save_plan()
         fixture.generate(target='mihomo')
         root = fixture.root
         data = fixtures.yaml.safe_load(fixture.output().read_text())
@@ -119,6 +129,14 @@ class AggregateRuntimeTest(unittest.TestCase):
                               'muse.ai', 'grokbot.com', 'grokipedia.com'],
                        'ai': ['openai.com', 'netflix.com'],
                        'apple-cn': ['apple.cn'], 'ads-lite': ['ads.test']}.get(name, ['unused.invalid'])
+            if policy == 'balanced':
+                domains = domains + ['apple-relay.apple.com', 'apple-relay.cloudflare.com',
+                    'apple-relay.fastly-edge.com', 'cp4.cloudflare.com', 'guzzoni.smoot.apple.com'] if name == 'cn' else domains
+                domains = {'icloud': ['p01-contacts.icloud.com'],
+                           'siri': ['guzzoni.apple.com'],
+                           'apple-cn': ['apple.cn', 'apps.apple.com', 'swcdn.apple.com',
+                                        'gspe35-ssl.ls.apple.com', 'cdn-cn1.apple-mapkit.com'],
+                           'icloud-private-relay': ['mask.icloud.com']}.get(name, domains)
             path = root / f'{name}.yaml'
             path.write_text(fixtures.yaml.safe_dump({'payload': ['DOMAIN-SUFFIX,' + d for d in domains]}))
             provider.clear()
@@ -152,6 +170,13 @@ class AggregateRuntimeTest(unittest.TestCase):
                    'http-intake.logs.us5.datadoghq.com', 'cdnjs.cloudflare.com',
                    'cdn.jsdelivr.net', 'cdn.tailwindcss.com', 'code.jquery.com',
                    'unpkg.com', 'fonts.googleapis.com', 'fonts.gstatic.com'] + ordinary
+        if policy == 'balanced':
+            domains += ['apple-relay.apple.com', 'apple-relay.cloudflare.com',
+                        'apple-relay.fastly-edge.com', 'cp4.cloudflare.com',
+                        'guzzoni.smoot.apple.com', 'guzzoni.apple.com',
+                        'mask.icloud.com', 'p01-contacts.icloud.com',
+                        'apps.apple.com', 'swcdn.apple.com', 'gspe35-ssl.ls.apple.com',
+                        'cdn-cn1.apple-mapkit.com']
         data['dns']['use-system-hosts'] = False
         data['dns']['listen'] = '127.0.0.1:0'
         for key in ('default-nameserver', 'nameserver', 'proxy-server-nameserver'):
@@ -234,18 +259,25 @@ class AggregateRuntimeTest(unittest.TestCase):
         expected.update({'127.0.0.1': (200, 'DIRECT'), 'baidu.com': (502, ''),
                          'apple.cn': (502, ''), 'reddit.com': (502, '')})
         expected.update({host: (200, 'BACKUP') for host in ordinary})
+        if policy == 'balanced':
+            expected.update({host: (200, 'BACKUP') for host in (
+                'unknown.example', 'unlisted.cn', 'unknown-ai.googleapis.com',
+                'youtube.com.attacker.example', 'notyoutube.com', 'x.com')})
+            expected['p01-contacts.icloud.com'] = (502, '')
+            expected.update({host: (502, '') for host in (
+                'apps.apple.com', 'swcdn.apple.com', 'gspe35-ssl.ls.apple.com', 'cdn-cn1.apple-mapkit.com')})
         self.assertEqual(result, expected, '\n'.join(runtime_logs))
         self.assertIn('dial 🇨🇳 国内流量 (match RuleSet/cn)', runtime_logs[0])
         self.assertIn('dial 🇨🇳 国内流量 (match RuleSet/apple-cn)', runtime_logs[0])
-        # Real HTTP 404 with no provider cache must leave this ordinary service
-        # on the sensitive fallback, never DIRECT or an unrelated AUTO category.
+        # An unavailable ordinary provider must use the selected policy's fallback.
         original = data['rule-providers']['ordinary-steam']
         data['rule-providers']['ordinary-steam'] = dict(
             type='http', behavior='domain', format='text', interval=86400,
             path=str(root / 'uncached-steam.list'), proxy='DIRECT',
             url=f'http://127.0.0.1:{direct_port}/missing-rules')
         unavailable = exercise(data)
-        self.assertEqual(unavailable['steampowered.com'], (200, 'PRIMARY'), '\n'.join(runtime_logs))
+        self.assertEqual(unavailable['steampowered.com'],
+                         (200, 'BACKUP' if policy == 'balanced' else 'PRIMARY'), '\n'.join(runtime_logs))
         data['rule-providers']['ordinary-steam'] = original
         # Negative control: reverting the privacy fallback must be detectable.
         data['rules'][-1] = 'MATCH,DIRECT'

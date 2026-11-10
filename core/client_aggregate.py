@@ -16,6 +16,7 @@ import tempfile
 from client_output import atomic_write, write_outputs
 from client_policy import adapt_config, protect_lightpanda
 from aggregate_daily import daily_sections, OVERSEAS_DNS
+from aggregate_balanced import sections as balanced_sections, agy_rules
 from client_snapshot import snapshot_nodes
 from sensitive_policy import domain_rules, app_rules
 from ordinary_policy import ordinary_rules, ordinary_providers
@@ -59,8 +60,16 @@ def load_plan(root, profile):
     if not isinstance(plan, dict):
         raise ValueError('汇总计划必须是对象')
     main_policy = plan.pop('mihomo_main_policy', 'strict')
-    if main_policy not in ('strict', 'daily'):
-        raise ValueError('mihomo_main_policy 必须为 strict/daily')
+    if main_policy not in ('strict', 'daily', 'balanced'):
+        raise ValueError('mihomo_main_policy 必须为 strict/daily/balanced')
+    agy_proxy = plan.pop('mihomo_agy_proxy', None)
+    if agy_proxy is not None and (not isinstance(agy_proxy, str)
+                                  or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_-]{0,63}/(?:Reality|CDN)', agy_proxy)
+                                  or not isinstance(plan.get('sensitive'), list)
+                                  or agy_proxy not in plan.get('sensitive', [])):
+        raise ValueError('mihomo_agy_proxy 必须是 sensitive 清单中的节点')
+    if agy_proxy is not None and main_policy != 'balanced':
+        raise ValueError('mihomo_agy_proxy 仅支持 balanced 主策略')
     standalone = plan.pop('standalone', False)
     if not isinstance(standalone, bool):
         raise ValueError('standalone 必须为布尔值')
@@ -78,7 +87,8 @@ def load_plan(root, profile):
                 or len(set(sensitive)) != len(sensitive)):
             raise ValueError('快照敏感主备列表无效')
         return plan | {'sources': [], 'devices': ['shared'], 'credential_identity': 'shared',
-                       'standalone': standalone, 'mihomo_main_policy': main_policy}
+                       'standalone': standalone, 'mihomo_main_policy': main_policy,
+                       'mihomo_agy_proxy': agy_proxy}
     if set(plan) == shared:
         identity = plan['credential_identity']
         if not isinstance(identity, str) or not DEVICE.fullmatch(identity):
@@ -88,10 +98,11 @@ def load_plan(root, profile):
         raise ValueError('client 必须为 stash/mihomo')
     if standalone and 'credential_identity' not in plan:
         raise ValueError('单服务器输出需要共享身份计划')
-    if main_policy == 'daily' and 'credential_identity' not in plan:
-        raise ValueError('mihomo_main_policy daily 需要共享身份计划')
+    if main_policy != 'strict' and 'credential_identity' not in plan:
+        raise ValueError('mihomo_main_policy daily/balanced 需要共享身份计划')
     plan['mihomo_main_policy'] = main_policy
     plan['standalone'] = standalone
+    plan['mihomo_agy_proxy'] = agy_proxy
     devices = plan['devices']
     if (not isinstance(devices, list) or not devices
             or any(not isinstance(d, str) or not DEVICE.fullmatch(d) for d in devices)
@@ -207,14 +218,16 @@ def groups(nodes, sensitive, target, *, daily=False):
             + group(MANUAL, 'select', list(nodes), target))
 
 
-def dns_policy(rules, *, daily=False):
+def dns_policy(rules, *, daily=False, general_dns=None):
     """Route resolver endpoints through the same sensitive or domestic policy."""
     policies = {}
+    policies_used = (AI, SENSITIVE, OVERSEAS, APPLE) if daily else (
+        (AI, SENSITIVE, OVERSEAS) if general_dns else (AI, SENSITIVE))
     for line in rules.splitlines():
         if not line.startswith('  - '):
             continue
         fields = line[4:].split(',')
-        if len(fields) < 3 or fields[2] not in ((AI, SENSITIVE, OVERSEAS, APPLE) if daily else (AI, SENSITIVE)):
+        if len(fields) < 3 or fields[2] not in policies_used:
             continue
         if fields[0] == 'DOMAIN':
             policies[fields[1]] = fields[2]
@@ -229,22 +242,29 @@ def dns_policy(rules, *, daily=False):
     if daily:
         policies['geosite:icloud'] = CN
     resolvers = DNS | ({OVERSEAS: OVERSEAS_DNS, APPLE: DNS[CN]} if daily else {})
+    if general_dns:
+        resolvers[OVERSEAS] = general_dns
     return '  nameserver-policy:\n' + ''.join(
         f'    {quote(domain)}: ' + quote([f'https://{ip}/dns-query' for ip in resolvers[policy]]) + '\n'
         for domain, policy in policies.items())
 
 
-def compose(profile, device, target, nodes, sensitive, *, main_policy='strict'):
+def compose(profile, device, target, nodes, sensitive, *, main_policy='strict', agy_proxy=None):
     daily = target == 'mihomo' and main_policy == 'daily'
+    balanced = target == 'mihomo' and main_policy == 'balanced'
+    if agy_proxy is not None and (agy_proxy not in nodes or agy_proxy not in sensitive):
+        raise ValueError('指定的 agy 节点不在主配置敏感节点中')
+    general_dns = OVERSEAS_DNS + DNS[AI] if balanced else None
     template = (CORE / 'client.yaml.tmpl').read_text()
     rule_template = (CORE / 'aggregate-rules.yaml.tmpl').read_text()
     revision_files = ('sensitive_policy.py', 'sensitive-services.json', 'ordinary_policy.py',
-                      'ordinary-services.json', 'ordinary-rulesets.json', 'client_policy.py', 'aggregate_daily.py')
+                      'ordinary-services.json', 'ordinary-rulesets.json', 'client_policy.py',
+                      'aggregate_daily.py', 'aggregate_balanced.py')
     revision = hashlib.sha256(template.encode() + rule_template.encode() + Path(__file__).read_bytes()
                               + b''.join((CORE / f).read_bytes() for f in revision_files)).hexdigest()[:12]
     values = {name: '' for name in re.findall(r'\{([A-Z0-9_]+)\}', template)}
     values.update(DEVICE=device, PROFILE_OWNER=profile, TARGET_LABEL=target,
-                  STRICT_LABEL=str(not daily).lower(), TEMPLATE_REVISION=revision,
+                  STRICT_LABEL=str(not (daily or balanced)).lower(), TEMPLATE_REVISION=revision,
                   SERVER_LABEL='Aggregate; per-server credentials remain in source profiles',
                   DNS_FOLLOW_RULE='  follow-rule: true' if target == 'stash' else '  respect-rules: true')
     # Share client transport/header and provider definitions with single-server
@@ -268,11 +288,15 @@ def compose(profile, device, target, nodes, sensitive, *, main_policy='strict'):
         ORDINARY_EXCLUSIONS='\n'.join(f'  - DOMAIN-SUFFIX,{d},{SENSITIVE}'
                                       for d in ('bbc', 'bloomberg', 'hbo', 'playstation', 'xbox')),
         ORDINARY_LOCAL_RULES='', ORDINARY_RULESET_RULES=ordinary_refs.rstrip())
-    values.update(CAPTIVE_RULE='', OVERSEAS_DNS_RULES='', DAILY_AI_RULES='', APPLE_TIME_RULE='',
+    values.update(CAPTIVE_RULE='', OVERSEAS_DNS_RULES='', ADDITIONAL_AI_RULES='', APPLE_TIME_RULE='',
                   SIRI_RULE='', RELAY_RULES='', APPLE_RULES='', CN_IP_RULES='',
                   DOWNLOAD_POLICY=SENSITIVE, RELAY_POLICY=SENSITIVE, FINAL_POLICY=SENSITIVE)
     if daily:
         values.update(daily_sections(AI, SENSITIVE, OVERSEAS, APPLE, CN))
+    if balanced:
+        values.update(balanced_sections(AI, OVERSEAS))
+        if agy_proxy is not None:
+            values['APP_RULES'] = agy_rules(agy_proxy) + '\n' + values['APP_RULES']
     rules = rule_template.format(**values)
     protected = [(fields[0], fields[1]) for line in rules.splitlines() if line.startswith('  - ')
                  and len(fields := line[4:].split(',')) >= 3
@@ -291,8 +315,8 @@ def compose(profile, device, target, nodes, sensitive, *, main_policy='strict'):
     # Bootstrap remains independent of sensitive resolver endpoints.
     header = header.replace('    - https://1.1.1.1/dns-query', '    - https://1.12.12.12/dns-query')
     header += '  nameserver:\n' + ''.join(f'    - https://{ip}/dns-query\n'
-                                           for ip in (OVERSEAS_DNS if daily else DNS[SENSITIVE]))
-    header += dns_policy(rules, daily=daily)
+                                           for ip in (general_dns or (OVERSEAS_DNS if daily else DNS[SENSITIVE])))
+    header += dns_policy(rules, daily=daily, general_dns=general_dns)
     header = '\n'.join(line for line in header.splitlines() if not line.lstrip().startswith('#') or line.startswith('#'))
     if target == 'mihomo':
         # Route exclusions replace Stash's skip-proxy for private address ranges.
@@ -303,7 +327,7 @@ def compose(profile, device, target, nodes, sensitive, *, main_policy='strict'):
             '    - ::1/128\n    - fc00::/7\n    - fe80::/10\n'
             '  dns-hijack:\n')
     config = (header + '\n\nproxies:\n' + '\n'.join(nodes.values()) + '\n'
-              + groups(nodes, sensitive, target, daily=daily) + 'rule-providers:\n' + providers
+              + groups(nodes, sensitive, target, daily=daily or balanced) + 'rule-providers:\n' + providers
               + '\nrules:\n' + rules)
     return protect_lightpanda(config, target)
 
@@ -364,7 +388,7 @@ def generate(root, profile, *, target=None, check=False, publish_to=None):
                 shared = 'credential_identity' in plan
                 filename = f'{profile}.yaml' if shared else f'{profile}-{device}.yaml'
                 text = compose(profile, 'mac' if shared else device, client, available, plan['sensitive'],
-                               main_policy=plan['mihomo_main_policy'])
+                               main_policy=plan['mihomo_main_policy'], agy_proxy=plan['mihomo_agy_proxy'])
                 if shared:
                     text = text.replace('# Network-Node config — device: mac', '# Network-Node shared client config', 1)
                 rendered[directory / filename] = text

@@ -77,7 +77,9 @@ python3 aggregate.py render --profile routing
 
 ## Mihomo 主订阅的现役日常策略
 
-共享计划可添加 `"mihomo_main_policy": "daily"`；合法值只有 `strict`（默认）和 `daily`，拼写错误停止生成。该字段仅作用于 **Mihomo 主配置**；Stash、单服务器输出及单节点生成器保持各自原策略。它用于维护已有云端主订阅的路由，不从云端 YAML 导入凭据或复制一套完整配置。
+新增的 `balanced` 策略组合手动敏感出口、普通海外兜底、Google + Cloudflare 解析、Apple 功能分流及可选 OMB agy 固定出口，见 [OMB agy 与 balanced 主订阅](omb-agy-routing.md)。下面的表格描述兼容保留的旧 daily 策略。
+
+共享计划可添加 `"mihomo_main_policy": "daily"`；合法值为 `strict`（默认）、`daily` 或 `balanced`，拼写错误停止生成。该字段仅作用于 **Mihomo 主配置**；Stash、单服务器输出及单节点生成器保持各自原策略。它用于维护已有云端主订阅的路由，不从云端 YAML 导入凭据或复制一套完整配置。
 
 | 项目 | daily 主配置 |
 |---|---|
