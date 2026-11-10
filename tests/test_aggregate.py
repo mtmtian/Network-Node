@@ -589,7 +589,8 @@ class AggregateTest(unittest.TestCase):
                 self.assertLess(rules.index(meta_rule), rules.index(f'RULE-SET,ads-lite,{aggregate.ADS}'))
                 self.assertLess(rules.index(meta_rule), rules.index(f'RULE-SET,cn,{aggregate.CN}'))
                 dns = data['dns']
-                self.assertEqual(dns['nameserver'], ['https://9.9.9.9/dns-query', 'https://149.112.112.112/dns-query'])
+                self.assertEqual(dns['nameserver'], [f'https://{ip}/dns-query' for ip in (
+                    '9.9.9.9', '149.112.112.112', '185.222.222.222', '45.11.45.11')])
                 self.assertEqual(dns['nameserver-policy']['+.facebook.com'],
                                  ['https://1.1.1.1/dns-query', 'https://1.0.0.1/dns-query'])
                 self.assertEqual(dns['nameserver-policy']['+.facebook.com'],
