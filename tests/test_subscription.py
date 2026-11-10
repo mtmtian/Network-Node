@@ -13,6 +13,17 @@ import subscription
 
 
 class SubscriptionTransportTests(unittest.TestCase):
+    def test_aggregate_main_publish_requires_explicit_policy(self):
+        # Old plans can render, but must not silently publish the default strict policy.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            state = root / 'profiles/routing'
+            state.mkdir(parents=True)
+            (state / 'aggregate.json').write_text(json.dumps({'snapshot': 'nodes.json'}))
+            with mock.patch.object(subscription, 'ROOT', root):
+                with self.assertRaisesRegex(subscription.PublishError, '显式设置 mihomo_main_policy'):
+                    subscription.verified_file('routing')
+
     def test_client_identity_and_redirect_refusal(self):
         seen = []
 

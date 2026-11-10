@@ -102,6 +102,10 @@ def verified_file(profile, server=None):
     aggregate = (state / 'aggregate.json').is_file()
     cli = 'aggregate.py' if aggregate else 'node.py'
     prefix = output_name(profile, server)
+    if aggregate and server is None:
+        plan = json.loads((state / 'aggregate.json').read_text())
+        if not isinstance(plan, dict) or 'mihomo_main_policy' not in plan:
+            raise PublishError('发布主订阅前必须显式设置 mihomo_main_policy，避免默认 strict 覆盖线上策略')
     if not aggregate:
         config = load_settings(state)
         if config.get('CLIENT_CONFIG_ENABLE', 'true') == 'false':

@@ -18,5 +18,7 @@
     "gcloud/CDN"
   ],
   "credential_identity": "mac",
-  "standalone": true
+  "standalone": true,
+  "mihomo_main_policy": "balanced",
+  "mihomo_agy_proxy": "gcloud/CDN"
 }
