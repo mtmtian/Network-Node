@@ -127,7 +127,7 @@ class AggregateRuntimeTest(unittest.TestCase):
             # only their static anchors can yield the expected PRIMARY exit.
             domains = {'cn': ['baidu.com', 'openai.com', 'reddit.com', 'tiktokshop.com',
                               'muse.ai', 'grokbot.com', 'grokipedia.com'],
-                       'ai': ['openai.com', 'netflix.com'],
+                       'ai': ['openai.com', 'netflix.com', 'clients6.google.com'],
                        'apple-cn': ['apple.cn'], 'ads-lite': ['ads.test']}.get(name, ['unused.invalid'])
             if policy == 'balanced':
                 domains = domains + ['apple-relay.apple.com', 'apple-relay.cloudflare.com',
@@ -159,6 +159,8 @@ class AggregateRuntimeTest(unittest.TestCase):
                     'coursera.org', 'threads.net', 'threads.com', 'discord.com']
         domains = ['baidu.com', 'openai.com', 'unknown.example', 'unlisted.cn', 'apple.cn',
                    'netflix.com', 'reddit.com', 'accounts.google.com', 'gemini.google.com',
+                   'assets.gemini.google.com', 'geminiweb-pa.clients6.google.com',
+                   'other.clients6.google.com', 'child.geminiweb-pa.clients6.google.com',
                    'unknown-ai.googleapis.com', 'youtube.com.attacker.example', 'notyoutube.com',
                    'ads.google.com', 'business.facebook.com', 'seller.tiktokshop.com',
                    'seller.tiktokglobalshop.com', 'ads.tiktok.com', 'x.com', 'grok.com',
@@ -260,6 +262,8 @@ class AggregateRuntimeTest(unittest.TestCase):
                          'apple.cn': (502, ''), 'reddit.com': (502, '')})
         expected.update({host: (200, 'BACKUP') for host in ordinary})
         if policy == 'balanced':
+            expected.update({host: (200, 'BACKUP') for host in (
+                'gemini.google.com', 'assets.gemini.google.com', 'geminiweb-pa.clients6.google.com')})
             expected.update({host: (200, 'BACKUP') for host in (
                 'unknown.example', 'unlisted.cn', 'unknown-ai.googleapis.com',
                 'youtube.com.attacker.example', 'notyoutube.com', 'x.com')})

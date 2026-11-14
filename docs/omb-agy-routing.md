@@ -1,4 +1,4 @@
-# OMB agy 与 balanced 主订阅
+# Google AI 专用出口与 balanced 主订阅
 
 同账号、同模型经一个出口返回地区不支持、经另一个出口可以生成时，应固定实际 API 出口。换 DNS 或普通测速不证明模型地区资格。
 
@@ -13,7 +13,13 @@
 }
 ```
 
-节点名是示例。`mihomo_agy_proxy` 可省略；设置时必须是当前主配置和 sensitive 清单中的 `server/Reality` 或 `server/CDN`，不接受 DIRECT 或规则分隔符。该选择只影响 OMB 官方 ACP / localharness 进程访问 googleapis.com，不接管其他程序的 Google API、浏览器或工具访问的网站。
+节点名是示例。`mihomo_agy_proxy` 可省略；设置时必须是当前主配置和 sensitive 清单中的 `server/Reality` 或 `server/CDN`，不接受 DIRECT 或规则分隔符。沿用这个配置键，同时覆盖以下 Google AI 请求：
+
+- OMB 官方 `agy_acp_server.par` / `localharness_external`，以及命令行 `agy` 访问 `googleapis.com`。
+- `/Applications/Antigravity.app/Contents/Resources/bin/language_server` 访问 `googleapis.com`。按完整路径匹配，不接管其他应用里同名的语言服务。
+- `gemini.google.com` 及其子域名，以及精确主机 `geminiweb-pa.clients6.google.com`。后者是网页实际生成接口；只切首页会留下不同出口。
+
+这些规则优先于通用 Antigravity 应用规则和 AI 域名集合。其他应用的 Google API、其他 `clients6.google.com` 主机和普通网站沿用原规则；不把整个 Google 域名空间送到专用出口，也不改变 DNS、TUN 或节点选择。非标准安装路径及 Antigravity IDE 仍遵循现有应用规则，不在这次精确路径覆盖范围。
 
 仅 Mihomo 主配置启用 balanced；Stash、派生单服务器文件及既有 strict/daily 策略保持原行为，不会给不含指定节点的单机输出添加悬空引用。
 

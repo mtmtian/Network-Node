@@ -42,10 +42,31 @@ class AggregateBalancedTest(unittest.TestCase):
         self.assertEqual(groups['🛡 敏感服务'], dict(name='🛡 敏感服务', type='select',
                                                proxies=['cstone/Reality', 'gcloud/CDN']))
         self.assertEqual(groups['🍎 Apple 基础服务']['proxies'], ['DIRECT', '🌐 普通海外', '🛡 敏感服务'])
-        for process in ('agy_acp_server.par', 'localharness_external'):
+        for process in ('agy_acp_server.par', 'localharness_external', 'agy'):
             rule = f'AND,((PROCESS-NAME,{process}),(DOMAIN-SUFFIX,googleapis.com)),gcloud/CDN'
             self.assertEqual(main['rules'].count(rule), 1)
             self.assertLess(main['rules'].index(rule), main['rules'].index('DOMAIN,oauth2.googleapis.com,🤖 AI / Meta 服务'))
+        google_rules = [
+            'AND,((PROCESS-PATH,/Applications/Antigravity.app/Contents/Resources/bin/language_server),'
+            '(DOMAIN-SUFFIX,googleapis.com)),gcloud/CDN',
+            'DOMAIN-SUFFIX,gemini.google.com,gcloud/CDN',
+            'DOMAIN,geminiweb-pa.clients6.google.com,gcloud/CDN',
+        ]
+        app_rule = next(r for r in main['rules'] if r.startswith('PROCESS-PATH-REGEX,'))
+        for rule in google_rules:
+            self.assertEqual(main['rules'].count(rule), 1)
+            self.assertLess(main['rules'].index(rule), main['rules'].index(app_rule))
+        # Given an existing balanced config, selecting a Google AI exit changes
+        # only these six rules, not DNS, nodes, groups or other service routing.
+        self.fixture.plan.pop('mihomo_agy_proxy')
+        self.fixture.save_plan()
+        self.fixture.generate()
+        without_override = self.outputs()['mihomo/routing.yaml']
+        pinned = [r for r in main['rules'] if r not in without_override['rules']]
+        self.assertEqual(len(pinned), 6)
+        self.assertEqual([r for r in main['rules'] if r not in pinned], without_override['rules'])
+        self.assertEqual({k: v for k, v in main.items() if k != 'rules'},
+                         {k: v for k, v in without_override.items() if k != 'rules'})
         for host in ('apple-relay.apple.com', 'apple-relay.cloudflare.com',
                      'apple-relay.fastly-edge.com', 'cp4.cloudflare.com'):
             rule = f'DOMAIN,{host},🤖 AI / Meta 服务'
@@ -85,8 +106,12 @@ class AggregateBalancedTest(unittest.TestCase):
         self.fixture.plan.update(mihomo_main_policy='balanced')
         self.fixture.save_plan()
         self.fixture.generate()
-        self.assertFalse(any('PROCESS-NAME,agy_acp_server.par' in r
-                             for r in self.outputs()['mihomo/routing.yaml']['rules']))
+        rules = self.outputs()['mihomo/routing.yaml']['rules']
+        for process in ('agy_acp_server.par', 'localharness_external', 'agy'):
+            self.assertFalse(any(f'(PROCESS-NAME,{process}),' in r for r in rules), process)
+        self.assertFalse(any('PROCESS-PATH,/Applications/Antigravity.app/' in r for r in rules))
+        self.assertNotIn('DOMAIN-SUFFIX,gemini.google.com,gcloud/CDN', rules)
+        self.assertNotIn('DOMAIN,geminiweb-pa.clients6.google.com,gcloud/CDN', rules)
         self.fixture.plan.pop('credential_identity')
         self.fixture.plan.update(devices=['mac'], client='mihomo', standalone=False)
         self.fixture.save_plan()

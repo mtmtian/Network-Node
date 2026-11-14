@@ -9,8 +9,14 @@ def sections(ai, overseas):
         FINAL_POLICY=overseas)
 
 
-def agy_rules(proxy):
-    """Only OMB's official ACP/harness Google API requests use the selected node."""
-    return '\n'.join(
+def google_ai_rules(proxy):
+    """Pin agy/Antigravity Google APIs and Gemini's web generation to one exit."""
+    process_rules = [
         f'  - AND,((PROCESS-NAME,{process}),(DOMAIN-SUFFIX,googleapis.com)),{proxy}'
-        for process in ('agy_acp_server.par', 'localharness_external'))
+        for process in ('agy_acp_server.par', 'localharness_external', 'agy')]
+    return '\n'.join(process_rules + [
+        '  - AND,((PROCESS-PATH,/Applications/Antigravity.app/Contents/Resources/bin/language_server),'
+        f'(DOMAIN-SUFFIX,googleapis.com)),{proxy}',
+        f'  - DOMAIN-SUFFIX,gemini.google.com,{proxy}',
+        f'  - DOMAIN,geminiweb-pa.clients6.google.com,{proxy}',
+    ])
