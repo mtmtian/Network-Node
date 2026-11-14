@@ -13,7 +13,7 @@
 }
 ```
 
-节点名是示例。`mihomo_agy_proxy` 可省略；设置时必须是当前主配置和 sensitive 清单中的 `server/Reality` 或 `server/CDN`，不接受 DIRECT 或规则分隔符。该选择只影响 OMB 官方 ACP / localharness 进程访问 googleapis.com，不接管其他程序的 Google API、浏览器或工具访问的网站。
+节点名是示例。`mihomo_agy_proxy` 可省略；设置时必须是当前主配置和 sensitive 清单中的 `server/Reality` 或 `server/CDN`，不接受 DIRECT 或规则分隔符。该选择只影响 agy 自己的进程访问 googleapis.com：OMB 官方 ACP / localharness 进程，以及 xagent 等工具直接调用的 `agy -p` 命令行（进程名 `agy`），不接管其他程序的 Google API、浏览器或工具访问的网站。
 
 仅 Mihomo 主配置启用 balanced；Stash、派生单服务器文件及既有 strict/daily 策略保持原行为，不会给不含指定节点的单机输出添加悬空引用。
 

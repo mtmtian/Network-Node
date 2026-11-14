@@ -42,7 +42,7 @@ class AggregateBalancedTest(unittest.TestCase):
         self.assertEqual(groups['🛡 敏感服务'], dict(name='🛡 敏感服务', type='select',
                                                proxies=['cstone/Reality', 'gcloud/CDN']))
         self.assertEqual(groups['🍎 Apple 基础服务']['proxies'], ['DIRECT', '🌐 普通海外', '🛡 敏感服务'])
-        for process in ('agy_acp_server.par', 'localharness_external'):
+        for process in ('agy_acp_server.par', 'localharness_external', 'agy'):
             rule = f'AND,((PROCESS-NAME,{process}),(DOMAIN-SUFFIX,googleapis.com)),gcloud/CDN'
             self.assertEqual(main['rules'].count(rule), 1)
             self.assertLess(main['rules'].index(rule), main['rules'].index('DOMAIN,oauth2.googleapis.com,🤖 AI / Meta 服务'))
@@ -85,7 +85,7 @@ class AggregateBalancedTest(unittest.TestCase):
         self.fixture.plan.update(mihomo_main_policy='balanced')
         self.fixture.save_plan()
         self.fixture.generate()
-        self.assertFalse(any('PROCESS-NAME,agy_acp_server.par' in r
+        self.assertFalse(any('PROCESS-NAME,agy' in r
                              for r in self.outputs()['mihomo/routing.yaml']['rules']))
         self.fixture.plan.pop('credential_identity')
         self.fixture.plan.update(devices=['mac'], client='mihomo', standalone=False)

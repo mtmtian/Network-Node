@@ -10,7 +10,10 @@ def sections(ai, overseas):
 
 
 def agy_rules(proxy):
-    """Only OMB's official ACP/harness Google API requests use the selected node."""
+    """Only agy's Google API requests (OMB's ACP/harness and the headless CLI) use the selected node."""
     return '\n'.join(
         f'  - AND,((PROCESS-NAME,{process}),(DOMAIN-SUFFIX,googleapis.com)),{proxy}'
-        for process in ('agy_acp_server.par', 'localharness_external'))
+        for process in AGY_PROCESSES)
+
+
+AGY_PROCESSES = ('agy_acp_server.par', 'localharness_external', 'agy')
