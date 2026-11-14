@@ -16,7 +16,7 @@ import tempfile
 from client_output import atomic_write, write_outputs
 from client_policy import adapt_config, protect_lightpanda
 from aggregate_daily import daily_sections, OVERSEAS_DNS
-from aggregate_balanced import sections as balanced_sections, agy_rules
+from aggregate_balanced import sections as balanced_sections, google_ai_rules
 from client_snapshot import snapshot_nodes
 from sensitive_policy import domain_rules, app_rules
 from ordinary_policy import ordinary_rules, ordinary_providers
@@ -296,7 +296,7 @@ def compose(profile, device, target, nodes, sensitive, *, main_policy='strict', 
     if balanced:
         values.update(balanced_sections(AI, OVERSEAS))
         if agy_proxy is not None:
-            values['APP_RULES'] = agy_rules(agy_proxy) + '\n' + values['APP_RULES']
+            values['APP_RULES'] = google_ai_rules(agy_proxy) + '\n' + values['APP_RULES']
     rules = rule_template.format(**values)
     protected = [(fields[0], fields[1]) for line in rules.splitlines() if line.startswith('  - ')
                  and len(fields := line[4:].split(',')) >= 3
