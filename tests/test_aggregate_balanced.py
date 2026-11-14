@@ -85,8 +85,9 @@ class AggregateBalancedTest(unittest.TestCase):
         self.fixture.plan.update(mihomo_main_policy='balanced')
         self.fixture.save_plan()
         self.fixture.generate()
-        self.assertFalse(any('PROCESS-NAME,agy' in r
-                             for r in self.outputs()['mihomo/routing.yaml']['rules']))
+        rules = self.outputs()['mihomo/routing.yaml']['rules']
+        for process in ('agy_acp_server.par', 'localharness_external', 'agy'):
+            self.assertFalse(any(f'(PROCESS-NAME,{process}),' in r for r in rules), process)
         self.fixture.plan.pop('credential_identity')
         self.fixture.plan.update(devices=['mac'], client='mihomo', standalone=False)
         self.fixture.save_plan()
