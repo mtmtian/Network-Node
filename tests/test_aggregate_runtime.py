@@ -270,8 +270,9 @@ class AggregateRuntimeTest(unittest.TestCase):
         if policy in ('balanced', 'daily'):
             expected.update({host: (200, 'BACKUP') for host in (
                 'unknown.example', 'unlisted.cn', 'unknown-ai.googleapis.com',
-                'youtube.com.attacker.example', 'notyoutube.com', 'x.com')})
+                'youtube.com.attacker.example', 'notyoutube.com')})
         if policy == 'balanced':
+            expected['x.com'] = (200, 'BACKUP')
             expected['p01-contacts.icloud.com'] = (502, '')
             expected.update({host: (502, '') for host in (
                 'apps.apple.com', 'swcdn.apple.com', 'gspe35-ssl.ls.apple.com', 'cdn-cn1.apple-mapkit.com')})
