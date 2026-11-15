@@ -29,6 +29,9 @@ class AggregateRuntimeTest(unittest.TestCase):
     def test_balanced_routes_apple_and_unknown_services(self):
         self.exercise_policy('balanced')
 
+    def test_daily_routes_gemini_generation_to_explicit_exit(self):
+        self.exercise_policy('daily')
+
     def exercise_policy(self, policy):
         binary = os.environ.get('MIHOMO_BIN')
         assets = os.environ.get('MIHOMO_DATA_DIR')
@@ -39,7 +42,7 @@ class AggregateRuntimeTest(unittest.TestCase):
         self.addCleanup(fixture.doCleanups)
         fixture.shared_plan()
         fixture.plan['mihomo_main_policy'] = policy
-        if policy == 'balanced':
+        if policy in ('balanced', 'daily'):
             fixture.plan['mihomo_agy_proxy'] = 'gcloud/CDN'
         fixture.save_plan()
         fixture.generate(target='mihomo')
@@ -261,12 +264,14 @@ class AggregateRuntimeTest(unittest.TestCase):
         expected.update({'127.0.0.1': (200, 'DIRECT'), 'baidu.com': (502, ''),
                          'apple.cn': (502, ''), 'reddit.com': (502, '')})
         expected.update({host: (200, 'BACKUP') for host in ordinary})
-        if policy == 'balanced':
+        if policy in ('balanced', 'daily'):
             expected.update({host: (200, 'BACKUP') for host in (
                 'gemini.google.com', 'assets.gemini.google.com', 'geminiweb-pa.clients6.google.com')})
+        if policy in ('balanced', 'daily'):
             expected.update({host: (200, 'BACKUP') for host in (
                 'unknown.example', 'unlisted.cn', 'unknown-ai.googleapis.com',
                 'youtube.com.attacker.example', 'notyoutube.com', 'x.com')})
+        if policy == 'balanced':
             expected['p01-contacts.icloud.com'] = (502, '')
             expected.update({host: (502, '') for host in (
                 'apps.apple.com', 'swcdn.apple.com', 'gspe35-ssl.ls.apple.com', 'cdn-cn1.apple-mapkit.com')})
@@ -281,7 +286,7 @@ class AggregateRuntimeTest(unittest.TestCase):
             url=f'http://127.0.0.1:{direct_port}/missing-rules')
         unavailable = exercise(data)
         self.assertEqual(unavailable['steampowered.com'],
-                         (200, 'BACKUP' if policy == 'balanced' else 'PRIMARY'), '\n'.join(runtime_logs))
+                         (200, 'BACKUP' if policy in ('balanced', 'daily') else 'PRIMARY'), '\n'.join(runtime_logs))
         data['rule-providers']['ordinary-steam'] = original
         # Negative control: reverting the privacy fallback must be detectable.
         data['rules'][-1] = 'MATCH,DIRECT'

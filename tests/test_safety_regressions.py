@@ -144,7 +144,10 @@ class SafetyRegressions(unittest.TestCase):
         rules = (self.output / self.client / "alpha.yaml").read_text().split("\nrules:\n")[1]
         ads = rules.index("RULE-SET,ads-lite,")
         for dependency in ("DOMAIN,rum.browser-intake-datadoghq.com,", "DOMAIN,o207216.ingest.sentry.io,", "DOMAIN,o33249.ingest.sentry.io,",
-                           "DOMAIN,cdn.workos.com,", "DOMAIN,humb.apple.com,", "DOMAIN,js.stripe.com,"):
+                           "DOMAIN,cdn.workos.com,", "DOMAIN,humb.apple.com,", "DOMAIN,js.stripe.com,",
+                           "DOMAIN,maps.googleapis.com,", "DOMAIN-SUFFIX,withpersona.com,",
+                           "DOMAIN-SUFFIX,frompersona.com,", "DOMAIN-SUFFIX,sentry.io,",
+                           "DOMAIN-KEYWORD,sentry,", "DOMAIN-KEYWORD,datadog,", "DOMAIN-KEYWORD,sift,"):
             self.assertLess(rules.index(dependency), ads)
 
     def test_client_fields_and_anytls_acme_are_independent(self):

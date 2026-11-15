@@ -11,9 +11,17 @@ def domain_rules(group):
     seen = set()
     lines = []
     for service in services.values():
-        for field, kind in (('domains', 'DOMAIN'), ('suffixes', 'DOMAIN-SUFFIX')):
-            for domain in service[field]:
-                if not re.fullmatch(r'[a-z0-9]+(?:[a-z0-9.-]*[a-z0-9])?', domain):
+        if (not isinstance(service, dict)
+                or not {'domains', 'suffixes'} <= set(service)
+                or set(service) - {'domains', 'suffixes', 'keywords'}):
+            raise ValueError('敏感服务需要 domains、suffixes，可选 keywords')
+        for field, kind in (('domains', 'DOMAIN'), ('suffixes', 'DOMAIN-SUFFIX'),
+                            ('keywords', 'DOMAIN-KEYWORD')):
+            values = service.get(field, [])
+            if not isinstance(values, list):
+                raise ValueError('敏感服务规则字段必须为列表')
+            for domain in values:
+                if not isinstance(domain, str) or not re.fullmatch(r'[a-z0-9]+(?:[a-z0-9.-]*[a-z0-9])?', domain):
                     raise ValueError('敏感服务域名格式无效')
                 if (kind, domain) in seen:
                     raise ValueError('敏感服务域名重复')

@@ -21,7 +21,7 @@
 
 这些规则优先于通用 Antigravity 应用规则和 AI 域名集合。其他应用的 Google API、其他 `clients6.google.com` 主机和普通网站沿用原规则；不把整个 Google 域名空间送到专用出口，也不改变 DNS、TUN 或节点选择。非标准安装路径及 Antigravity IDE 仍遵循现有应用规则，不在这次精确路径覆盖范围。
 
-仅 Mihomo 主配置启用 balanced；Stash、派生单服务器文件及既有 strict/daily 策略保持原行为，不会给不含指定节点的单机输出添加悬空引用。
+`mihomo_agy_proxy` 可与 Mihomo 主配置的 `daily` 或 `balanced` 策略同时使用，不能用于 `strict`。专线规则只出现在主 Mihomo 输出中；daily 未设置专线时仍按 AI 组处理这些 Google AI 请求。Stash、派生单服务器文件及其余策略不受影响，也不会给不含指定节点的单机输出添加悬空引用。
 
 | 行为 | balanced |
 | --- | --- |
