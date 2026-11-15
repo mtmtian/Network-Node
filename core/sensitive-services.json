@@ -147,7 +147,17 @@
   },
   "claude_dependencies": {
     "suffixes": [
-      "claude.app"
+      "claude.app",
+      "sentry.io",
+      "withpersona.com",
+      "frompersona.com",
+      "datadoghq.com",
+      "sift.com"
+    ],
+    "keywords": [
+      "sentry",
+      "datadog",
+      "sift"
     ],
     "domains": [
       "http-intake.logs.us5.datadoghq.com",
@@ -157,7 +167,8 @@
       "code.jquery.com",
       "unpkg.com",
       "fonts.googleapis.com",
-      "fonts.gstatic.com"
+      "fonts.gstatic.com",
+      "maps.googleapis.com"
     ]
   },
   "muse": {

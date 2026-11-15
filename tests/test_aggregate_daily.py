@@ -36,13 +36,28 @@ class AggregateDailyTest(unittest.TestCase):
                 self.assertEqual(before[name], after[name], name)
         main = after['mihomo/routing.yaml']
         self.assertEqual(main['proxies'], before['mihomo/routing.yaml']['proxies'])
-        self.assertEqual(len(main['rules']), 408)
+        self.assertEqual(len(main['rules']), 423)
         self.assertEqual(sum('lightpanda' in rule for rule in main['rules']), 10)
         self.assertEqual(main['rules'][-3:], ['RULE-SET,cn-ip,🇨🇳 国内流量',
                                              'GEOIP,CN,🇨🇳 国内流量', 'MATCH,🌐 普通海外'])
         self.assertLess(main['rules'].index('DOMAIN-SUFFIX,smoot.apple.com,🤖 AI / Meta 服务'),
                         main['rules'].index('DOMAIN-SUFFIX,apple.com,🍎 Apple 基础服务'))
+        self.assertIn('AND,((PROCESS-NAME,agy),(DOMAIN-SUFFIX,googleapis.com)),🤖 AI / Meta 服务', main['rules'])
+        self.assertIn('AND,((PROCESS-PATH,/Applications/Antigravity.app/Contents/Resources/bin/language_server),(DOMAIN-SUFFIX,googleapis.com)),🤖 AI / Meta 服务', main['rules'])
+        for dependency in ('DOMAIN,maps.googleapis.com,🤖 AI / Meta 服务',
+                           'DOMAIN-SUFFIX,withpersona.com,🤖 AI / Meta 服务',
+                           'DOMAIN-SUFFIX,frompersona.com,🤖 AI / Meta 服务',
+                           'DOMAIN-SUFFIX,sentry.io,🤖 AI / Meta 服务',
+                           'DOMAIN-KEYWORD,sentry,🤖 AI / Meta 服务',
+                           'DOMAIN-KEYWORD,datadog,🤖 AI / Meta 服务',
+                           'DOMAIN-KEYWORD,sift,🤖 AI / Meta 服务'):
+            self.assertIn(dependency, main['rules'])
+        self.assertLess(main['rules'].index('AND,((PROCESS-NAME,agy),(DOMAIN-SUFFIX,googleapis.com)),🤖 AI / Meta 服务'),
+                        main['rules'].index('RULE-SET,cn-ip,🇨🇳 国内流量'))
+        self.assertLess(main['rules'].index('AND,((PROCESS-PATH,/Applications/Antigravity.app/Contents/Resources/bin/language_server),(DOMAIN-SUFFIX,googleapis.com)),🤖 AI / Meta 服务'),
+                        main['rules'].index('RULE-SET,cn-ip,🇨🇳 国内流量'))
         self.assertEqual(main['dns']['nameserver'], ['https://8.8.8.8/dns-query', 'https://8.8.4.4/dns-query'])
+
         # Independent 2026-11-04 production baseline, captured BEFORE implementation.
         # 2026-11-09: rules/DNS add only muse.ai, grokbot.com and grokipedia.com;
         # fixed-fixture comparison verified all other fields and rule order unchanged.
@@ -50,14 +65,64 @@ class AggregateDailyTest(unittest.TestCase):
         # resolver list; fixed-fixture comparison verified nothing else changed.
         # Canonical JSON hashes cover every field and rule position, not credentials.
         expected = {
-            'rules': '5e359ef9b55ea7c4e3766996818e7b2b72f76d73399d5a2a12172eecf51ab78c',
-            'dns': 'd1e01e076cd6fd4473f1abf581212c2746753b33c6e8218026ea7e26253ac584',
+            'rules': '99d91076eeaeebafc959d8218cdca2dd6754ff922126f79e987524061a5a0325',
+            'dns': 'fbc31c6853f6afb15d40586daad4815a7783622775a1dbdaded566d90e906076',
             'rule-providers': '33888f3e51d297f73cfb603dab7b7d31ae5c559264eab07a4cf9b46bffb3a770',
             'proxy-groups': '09d5331a573248ae6c1e7d46a9be127f08ab5b68f1518cd0d151f35228a87503',
         }
         for section, digest in expected.items():
             actual = json.dumps(main[section], sort_keys=True, ensure_ascii=False, separators=(',', ':'))
             self.assertEqual(hashlib.sha256(actual.encode()).hexdigest(), digest, section)
+        self.assertEqual(self.fixture.generate(check=True), 0)
+
+    def test_daily_google_ai_proxy_changes_only_the_six_precise_rules(self):
+        self.fixture.plan['mihomo_main_policy'] = 'daily'
+        self.fixture.save_plan()
+        self.fixture.generate()
+        before = self.outputs()
+        self.fixture.plan['mihomo_agy_proxy'] = 'gcloud/CDN'
+        self.fixture.save_plan()
+        self.fixture.generate()
+        after = self.outputs()
+        main = after['mihomo/routing.yaml']
+        before_main = before['mihomo/routing.yaml']
+        self.assertTrue(
+            {name: config for name, config in after.items() if name != 'mihomo/routing.yaml'}
+            == {name: config for name, config in before.items() if name != 'mihomo/routing.yaml'},
+            'non-Mihomo outputs changed')
+
+        expected_rules = [
+            'AND,((PROCESS-NAME,agy_acp_server.par),(DOMAIN-SUFFIX,googleapis.com)),gcloud/CDN',
+            'AND,((PROCESS-NAME,localharness_external),(DOMAIN-SUFFIX,googleapis.com)),gcloud/CDN',
+            'AND,((PROCESS-NAME,agy),(DOMAIN-SUFFIX,googleapis.com)),gcloud/CDN',
+            'AND,((PROCESS-PATH,/Applications/Antigravity.app/Contents/Resources/bin/language_server),'
+            '(DOMAIN-SUFFIX,googleapis.com)),gcloud/CDN',
+            'DOMAIN-SUFFIX,gemini.google.com,gcloud/CDN',
+            'DOMAIN,geminiweb-pa.clients6.google.com,gcloud/CDN',
+        ]
+        rules = main['rules']
+        indexes = [rules.index(rule) for rule in expected_rules]
+        self.assertEqual([rules.count(rule) for rule in expected_rules], [1] * 6)
+        self.assertEqual(indexes, list(range(indexes[0], indexes[0] + 6)))
+        old_ai_rules = [rule.replace('gcloud/CDN', '🤖 AI / Meta 服务') for rule in expected_rules]
+        baseline_other_rules = list(before_main['rules'])
+        for rule in old_ai_rules:
+            reverse_index = baseline_other_rules[::-1].index(rule)
+            del baseline_other_rules[len(baseline_other_rules) - reverse_index - 1]
+        self.assertTrue(
+            [rule for rule in rules if rule not in expected_rules] == baseline_other_rules,
+            'daily rules other than the six Google AI routes changed')
+        for section in main.keys() - {'rules'}:
+            self.assertTrue(main[section] == before_main[section], f'{section} changed')
+        app_rule = next(i for i, rule in enumerate(rules) if rule.startswith('PROCESS-PATH-REGEX,'))
+        ai_rule = rules.index('RULE-SET,ai,🤖 AI / Meta 服务')
+        self.assertLess(indexes[-1], app_rule)
+        self.assertLess(indexes[-1], ai_rule)
+        self.assertIn('DOMAIN-SUFFIX,anthropic.com,🤖 AI / Meta 服务', rules)
+        self.assertIn('DOMAIN,maps.googleapis.com,🤖 AI / Meta 服务', rules)
+        self.assertIn('RULE-SET,cn-ip,🇨🇳 国内流量', rules[-3])
+        self.assertEqual(main['rules'][-3:], ['RULE-SET,cn-ip,🇨🇳 国内流量',
+                                             'GEOIP,CN,🇨🇳 国内流量', 'MATCH,🌐 普通海外'])
         self.assertEqual(self.fixture.generate(check=True), 0)
 
     def test_unknown_policy_fails_before_writing(self):

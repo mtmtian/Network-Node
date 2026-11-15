@@ -353,7 +353,8 @@ class AggregateTest(unittest.TestCase):
                     continue
                 kind, value = fields[:2]
                 if ((kind == 'DOMAIN' and host == value) or
-                    (kind == 'DOMAIN-SUFFIX' and (host == value or host.endswith('.' + value)))):
+                    (kind == 'DOMAIN-SUFFIX' and (host == value or host.endswith('.' + value))) or
+                    (kind == 'DOMAIN-KEYWORD' and value in host)):
                     return True
             return False
         # Product acceptance examples, independent of the generated data file.
@@ -373,7 +374,9 @@ class AggregateTest(unittest.TestCase):
                     'grokipedia.com', 'www.grokipedia.com',
                     'http-intake.logs.us5.datadoghq.com', 'cdnjs.cloudflare.com',
                     'cdn.jsdelivr.net', 'cdn.tailwindcss.com', 'code.jquery.com',
-                    'unpkg.com', 'fonts.googleapis.com', 'fonts.gstatic.com')
+                    'unpkg.com', 'fonts.googleapis.com', 'fonts.gstatic.com',
+                    'maps.googleapis.com', 'foo.withpersona.com', 'foo.frompersona.com',
+                    'api.datadoghq.com', 'api.sift.com')
         dns = data['dns']['nameserver-policy']
         for host in required:
             with self.subTest(host=host):
@@ -383,15 +386,17 @@ class AggregateTest(unittest.TestCase):
                 self.assertTrue(candidates, 'missing sensitive DNS policy')
                 for key, value in candidates:
                     self.assertEqual(value, ['https://1.1.1.1/dns-query', 'https://1.0.0.1/dns-query'])
-        for host in ('storage.googleapis.com', 'maps.googleapis.com', 'www.gstatic.com',
-                     'unrelated.sentry.io', 'datadog-unrelated.example', 'sift-example.com',
+        for host in ('storage.googleapis.com', 'www.gstatic.com',
                      'api.deepseek.com', 'doubao.com', 'api.spotify.com',
                      'notmuse.ai', 'notgrokbot.com', 'notgrokipedia.com',
                      'muse.ai.attacker.example', 'grokbot.com.attacker.example',
                      'grokipedia.com.attacker.example'):
             self.assertFalse(sensitive(host), host)
-        for keyword in ('datadog', 'sentry', 'sift'):
-            self.assertFalse(any(r[:2] == ['DOMAIN-KEYWORD', keyword] for r in rules))
+        for keyword, host in (('datadog', 'datadog-unrelated.example'),
+                              ('sentry', 'unrelated.sentry.io'),
+                              ('sift', 'sift-example.com')):
+            self.assertTrue(sensitive(host), host)
+            self.assertTrue(any(r[:2] == ['DOMAIN-KEYWORD', keyword] for r in rules))
 
     @unittest.skipUnless(yaml, 'PyYAML required')
     def test_ai_product_anchors_precede_dynamic_and_cn_rules_on_both_clients(self):

@@ -68,8 +68,8 @@ def load_plan(root, profile):
                                   or not isinstance(plan.get('sensitive'), list)
                                   or agy_proxy not in plan.get('sensitive', [])):
         raise ValueError('mihomo_agy_proxy 必须是 sensitive 清单中的节点')
-    if agy_proxy is not None and main_policy != 'balanced':
-        raise ValueError('mihomo_agy_proxy 仅支持 balanced 主策略')
+    if agy_proxy is not None and main_policy == 'strict':
+        raise ValueError('mihomo_agy_proxy 仅支持 daily/balanced 主策略')
     standalone = plan.pop('standalone', False)
     if not isinstance(standalone, bool):
         raise ValueError('standalone 必须为布尔值')
@@ -218,7 +218,7 @@ def groups(nodes, sensitive, target, *, daily=False):
             + group(MANUAL, 'select', list(nodes), target))
 
 
-def dns_policy(rules, *, daily=False, general_dns=None):
+def dns_policy(rules, *, daily=False, general_dns=None, pinned_google_ai=False):
     """Route resolver endpoints through the same sensitive or domestic policy."""
     policies = {}
     policies_used = (AI, SENSITIVE, OVERSEAS, APPLE) if daily else (
@@ -241,6 +241,8 @@ def dns_policy(rules, *, daily=False, general_dns=None):
     policies['geosite:cn'] = CN
     if daily:
         policies['geosite:icloud'] = CN
+        if pinned_google_ai:
+            policies['geminiweb-pa.clients6.google.com'] = AI
     resolvers = DNS | ({OVERSEAS: OVERSEAS_DNS, APPLE: DNS[CN]} if daily else {})
     if general_dns:
         resolvers[OVERSEAS] = general_dns
@@ -293,14 +295,18 @@ def compose(profile, device, target, nodes, sensitive, *, main_policy='strict', 
                   DOWNLOAD_POLICY=SENSITIVE, RELAY_POLICY=SENSITIVE, FINAL_POLICY=SENSITIVE)
     if daily:
         values.update(daily_sections(AI, SENSITIVE, OVERSEAS, APPLE, CN))
+        if agy_proxy is None:
+            values['ADDITIONAL_AI_RULES'] = google_ai_rules(AI) + '\n' + values['ADDITIONAL_AI_RULES']
     if balanced:
         values.update(balanced_sections(AI, OVERSEAS))
-        if agy_proxy is not None:
-            values['APP_RULES'] = google_ai_rules(agy_proxy) + '\n' + values['APP_RULES']
+    if (daily or balanced) and agy_proxy is not None:
+        values['APP_RULES'] = google_ai_rules(agy_proxy) + '\n' + values['APP_RULES']
     rules = rule_template.format(**values)
     protected = [(fields[0], fields[1]) for line in rules.splitlines() if line.startswith('  - ')
                  and len(fields := line[4:].split(',')) >= 3
                  and fields[0] in ('DOMAIN', 'DOMAIN-SUFFIX') and fields[2] in (AI, SENSITIVE)]
+    if agy_proxy is not None and (daily or balanced):
+        protected.append(('DOMAIN', 'geminiweb-pa.clients6.google.com'))
     values['ORDINARY_LOCAL_RULES'] = ordinary_rules(OVERSEAS, protected).rstrip()
     rules = rule_template.format(**values)
     used = set(re.findall(r'RULE-SET,([^,]+),', rules))
@@ -316,7 +322,8 @@ def compose(profile, device, target, nodes, sensitive, *, main_policy='strict', 
     header = header.replace('    - https://1.1.1.1/dns-query', '    - https://1.12.12.12/dns-query')
     header += '  nameserver:\n' + ''.join(f'    - https://{ip}/dns-query\n'
                                            for ip in (general_dns or (OVERSEAS_DNS if daily else DNS[SENSITIVE])))
-    header += dns_policy(rules, daily=daily, general_dns=general_dns)
+    header += dns_policy(rules, daily=daily, general_dns=general_dns,
+                          pinned_google_ai=daily and agy_proxy is not None)
     header = '\n'.join(line for line in header.splitlines() if not line.lstrip().startswith('#') or line.startswith('#'))
     if target == 'mihomo':
         # Route exclusions replace Stash's skip-proxy for private address ranges.
