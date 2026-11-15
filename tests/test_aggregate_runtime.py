@@ -267,10 +267,11 @@ class AggregateRuntimeTest(unittest.TestCase):
         if policy in ('balanced', 'daily'):
             expected.update({host: (200, 'BACKUP') for host in (
                 'gemini.google.com', 'assets.gemini.google.com', 'geminiweb-pa.clients6.google.com')})
-        if policy == 'balanced':
+        if policy in ('balanced', 'daily'):
             expected.update({host: (200, 'BACKUP') for host in (
                 'unknown.example', 'unlisted.cn', 'unknown-ai.googleapis.com',
                 'youtube.com.attacker.example', 'notyoutube.com', 'x.com')})
+        if policy == 'balanced':
             expected['p01-contacts.icloud.com'] = (502, '')
             expected.update({host: (502, '') for host in (
                 'apps.apple.com', 'swcdn.apple.com', 'gspe35-ssl.ls.apple.com', 'cdn-cn1.apple-mapkit.com')})
@@ -285,7 +286,7 @@ class AggregateRuntimeTest(unittest.TestCase):
             url=f'http://127.0.0.1:{direct_port}/missing-rules')
         unavailable = exercise(data)
         self.assertEqual(unavailable['steampowered.com'],
-                         (200, 'BACKUP' if policy == 'balanced' else 'PRIMARY'), '\n'.join(runtime_logs))
+                         (200, 'BACKUP' if policy in ('balanced', 'daily') else 'PRIMARY'), '\n'.join(runtime_logs))
         data['rule-providers']['ordinary-steam'] = original
         # Negative control: reverting the privacy fallback must be detectable.
         data['rules'][-1] = 'MATCH,DIRECT'
