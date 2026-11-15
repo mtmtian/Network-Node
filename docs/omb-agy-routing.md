@@ -16,6 +16,7 @@
 节点名是示例。`mihomo_agy_proxy` 可省略；设置时必须是当前主配置和 sensitive 清单中的 `server/Reality` 或 `server/CDN`，不接受 DIRECT 或规则分隔符。沿用这个配置键，同时覆盖以下 Google AI 请求：
 
 - OMB 官方 `agy_acp_server.par` / `localharness_external`，以及命令行 `agy` 访问 `googleapis.com`。
+- Google AI Studio 的 `aistudio.google.com`、官方文档/地区跳转 `ai.google.dev`、Gemini API `generativelanguage.googleapis.com`，以及其 `accounts.google.com` / `oauth2.googleapis.com` 登录链路。后两个是 Google 共享登录主机，命中它们的所有 Google OAuth 请求都会跟随该出口，不只限于 AI Studio，无法按应用拆分。
 - `/Applications/Antigravity.app/Contents/Resources/bin/language_server` 访问 `googleapis.com`。按完整路径匹配，不接管其他应用里同名的语言服务。
 - `gemini.google.com` 及其子域名，以及精确主机 `geminiweb-pa.clients6.google.com`。后者是网页实际生成接口；只切首页会留下不同出口。
 

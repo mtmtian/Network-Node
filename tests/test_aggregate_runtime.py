@@ -161,7 +161,9 @@ class AggregateRuntimeTest(unittest.TestCase):
                     'steampowered.com', 'disneyplus.com', 'reuters.com', 'pypi.org',
                     'coursera.org', 'threads.net', 'threads.com', 'discord.com']
         domains = ['baidu.com', 'openai.com', 'unknown.example', 'unlisted.cn', 'apple.cn',
-                   'netflix.com', 'reddit.com', 'accounts.google.com', 'gemini.google.com',
+                   'netflix.com', 'reddit.com', 'accounts.google.com', 'oauth2.googleapis.com',
+                   'aistudio.google.com', 'ai.google.dev', 'generativelanguage.googleapis.com',
+                   'gemini.google.com',
                    'assets.gemini.google.com', 'geminiweb-pa.clients6.google.com',
                    'other.clients6.google.com', 'child.geminiweb-pa.clients6.google.com',
                    'unknown-ai.googleapis.com', 'youtube.com.attacker.example', 'notyoutube.com',
@@ -266,6 +268,8 @@ class AggregateRuntimeTest(unittest.TestCase):
         expected.update({host: (200, 'BACKUP') for host in ordinary})
         if policy in ('balanced', 'daily'):
             expected.update({host: (200, 'BACKUP') for host in (
+                'aistudio.google.com', 'ai.google.dev', 'generativelanguage.googleapis.com',
+                'accounts.google.com', 'oauth2.googleapis.com',
                 'gemini.google.com', 'assets.gemini.google.com', 'geminiweb-pa.clients6.google.com')})
         if policy in ('balanced', 'daily'):
             expected.update({host: (200, 'BACKUP') for host in (

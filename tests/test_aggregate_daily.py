@@ -36,7 +36,7 @@ class AggregateDailyTest(unittest.TestCase):
                 self.assertEqual(before[name], after[name], name)
         main = after['mihomo/routing.yaml']
         self.assertEqual(main['proxies'], before['mihomo/routing.yaml']['proxies'])
-        self.assertEqual(len(main['rules']), 423)
+        self.assertEqual(len(main['rules']), 429)
         self.assertEqual(sum('lightpanda' in rule for rule in main['rules']), 10)
         self.assertEqual(main['rules'][-3:], ['RULE-SET,cn-ip,🇨🇳 国内流量',
                                              'GEOIP,CN,🇨🇳 国内流量', 'MATCH,🌐 普通海外'])
@@ -65,8 +65,8 @@ class AggregateDailyTest(unittest.TestCase):
         # resolver list; fixed-fixture comparison verified nothing else changed.
         # Canonical JSON hashes cover every field and rule position, not credentials.
         expected = {
-            'rules': '99d91076eeaeebafc959d8218cdca2dd6754ff922126f79e987524061a5a0325',
-            'dns': 'fbc31c6853f6afb15d40586daad4815a7783622775a1dbdaded566d90e906076',
+            'rules': '1186d11826ec369fd6b7007aeaeef0d161d700a191ca866f285c2e51db650823',
+            'dns': 'dbb188876547c5876017d409de486cbcdf663299f84b4f05679d7a002593b80e',
             'rule-providers': '33888f3e51d297f73cfb603dab7b7d31ae5c559264eab07a4cf9b46bffb3a770',
             'proxy-groups': '09d5331a573248ae6c1e7d46a9be127f08ab5b68f1518cd0d151f35228a87503',
         }
@@ -75,7 +75,7 @@ class AggregateDailyTest(unittest.TestCase):
             self.assertEqual(hashlib.sha256(actual.encode()).hexdigest(), digest, section)
         self.assertEqual(self.fixture.generate(check=True), 0)
 
-    def test_daily_google_ai_proxy_changes_only_the_six_precise_rules(self):
+    def test_daily_google_ai_proxy_changes_only_the_google_ai_rules(self):
         self.fixture.plan['mihomo_main_policy'] = 'daily'
         self.fixture.save_plan()
         self.fixture.generate()
@@ -97,13 +97,18 @@ class AggregateDailyTest(unittest.TestCase):
             'AND,((PROCESS-NAME,agy),(DOMAIN-SUFFIX,googleapis.com)),gcloud/CDN',
             'AND,((PROCESS-PATH,/Applications/Antigravity.app/Contents/Resources/bin/language_server),'
             '(DOMAIN-SUFFIX,googleapis.com)),gcloud/CDN',
+            'DOMAIN-SUFFIX,aistudio.google.com,gcloud/CDN',
+            'DOMAIN-SUFFIX,ai.google.dev,gcloud/CDN',
+            'DOMAIN-SUFFIX,generativelanguage.googleapis.com,gcloud/CDN',
+            'DOMAIN,accounts.google.com,gcloud/CDN',
+            'DOMAIN,oauth2.googleapis.com,gcloud/CDN',
             'DOMAIN-SUFFIX,gemini.google.com,gcloud/CDN',
             'DOMAIN,geminiweb-pa.clients6.google.com,gcloud/CDN',
         ]
         rules = main['rules']
         indexes = [rules.index(rule) for rule in expected_rules]
-        self.assertEqual([rules.count(rule) for rule in expected_rules], [1] * 6)
-        self.assertEqual(indexes, list(range(indexes[0], indexes[0] + 6)))
+        self.assertEqual([rules.count(rule) for rule in expected_rules], [1] * 11)
+        self.assertEqual(indexes, list(range(indexes[0], indexes[0] + 11)))
         old_ai_rules = [rule.replace('gcloud/CDN', '🤖 AI / Meta 服务') for rule in expected_rules]
         baseline_other_rules = list(before_main['rules'])
         for rule in old_ai_rules:
@@ -111,7 +116,7 @@ class AggregateDailyTest(unittest.TestCase):
             del baseline_other_rules[len(baseline_other_rules) - reverse_index - 1]
         self.assertTrue(
             [rule for rule in rules if rule not in expected_rules] == baseline_other_rules,
-            'daily rules other than the six Google AI routes changed')
+            'daily rules other than the Google AI routes changed')
         for section in main.keys() - {'rules'}:
             self.assertTrue(main[section] == before_main[section], f'{section} changed')
         app_rule = next(i for i, rule in enumerate(rules) if rule.startswith('PROCESS-PATH-REGEX,'))

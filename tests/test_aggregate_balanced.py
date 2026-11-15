@@ -49,6 +49,11 @@ class AggregateBalancedTest(unittest.TestCase):
         google_rules = [
             'AND,((PROCESS-PATH,/Applications/Antigravity.app/Contents/Resources/bin/language_server),'
             '(DOMAIN-SUFFIX,googleapis.com)),gcloud/CDN',
+            'DOMAIN-SUFFIX,aistudio.google.com,gcloud/CDN',
+            'DOMAIN-SUFFIX,ai.google.dev,gcloud/CDN',
+            'DOMAIN-SUFFIX,generativelanguage.googleapis.com,gcloud/CDN',
+            'DOMAIN,accounts.google.com,gcloud/CDN',
+            'DOMAIN,oauth2.googleapis.com,gcloud/CDN',
             'DOMAIN-SUFFIX,gemini.google.com,gcloud/CDN',
             'DOMAIN,geminiweb-pa.clients6.google.com,gcloud/CDN',
         ]
@@ -57,13 +62,13 @@ class AggregateBalancedTest(unittest.TestCase):
             self.assertEqual(main['rules'].count(rule), 1)
             self.assertLess(main['rules'].index(rule), main['rules'].index(app_rule))
         # Given an existing balanced config, selecting a Google AI exit changes
-        # only these six rules, not DNS, nodes, groups or other service routing.
+        # only these Google AI rules, not DNS, nodes, groups or other service routing.
         self.fixture.plan.pop('mihomo_agy_proxy')
         self.fixture.save_plan()
         self.fixture.generate()
         without_override = self.outputs()['mihomo/routing.yaml']
         pinned = [r for r in main['rules'] if r not in without_override['rules']]
-        self.assertEqual(len(pinned), 6)
+        self.assertEqual(len(pinned), 11)
         self.assertEqual([r for r in main['rules'] if r not in pinned], without_override['rules'])
         self.assertEqual({k: v for k, v in main.items() if k != 'rules'},
                          {k: v for k, v in without_override.items() if k != 'rules'})
@@ -110,6 +115,11 @@ class AggregateBalancedTest(unittest.TestCase):
         for process in ('agy_acp_server.par', 'localharness_external', 'agy'):
             self.assertFalse(any(f'(PROCESS-NAME,{process}),' in r for r in rules), process)
         self.assertFalse(any('PROCESS-PATH,/Applications/Antigravity.app/' in r for r in rules))
+        self.assertNotIn('DOMAIN-SUFFIX,aistudio.google.com,gcloud/CDN', rules)
+        self.assertNotIn('DOMAIN-SUFFIX,ai.google.dev,gcloud/CDN', rules)
+        self.assertNotIn('DOMAIN-SUFFIX,generativelanguage.googleapis.com,gcloud/CDN', rules)
+        self.assertNotIn('DOMAIN,accounts.google.com,gcloud/CDN', rules)
+        self.assertNotIn('DOMAIN,oauth2.googleapis.com,gcloud/CDN', rules)
         self.assertNotIn('DOMAIN-SUFFIX,gemini.google.com,gcloud/CDN', rules)
         self.assertNotIn('DOMAIN,geminiweb-pa.clients6.google.com,gcloud/CDN', rules)
         self.fixture.plan.pop('credential_identity')
