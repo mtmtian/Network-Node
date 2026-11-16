@@ -2,6 +2,10 @@
 
 同账号、同模型经一个出口返回地区不支持、经另一个出口可以生成时，应固定实际 API 出口。换 DNS 或普通测速不证明模型地区资格。
 
+选择专线的原因是服务地区判定：据使用者反馈，Google AI 曾把经 `cstone` 的请求判为中国大陆。因此普通 AI 组可继续使用 `cstone`，Google AI 网页和实际生成接口则使用经功能验证的同一条出口；agy 可按进程单独指定。这个观察不代表 Google 会把该节点的所有请求永久判为同一地区。
+
+2026-11-16 本机同账号对照：`gcloud/Reality` 和 `lax/Reality` 均完成 Gemini 网页生成，也都进入了 AI Studio 新对话编辑器；Mihomo 连接记录确认主后端 `alkalimakersuite-pa.clients6.google.com` 随入口切换。随后验证：浏览器/gcloud 新 OAuth、Gemini 和 Studio 新对话生成在 `gcloud/Reality` 上通过；agy 使用已登录账号经 `lax/Reality` 完成模型生成。lax 上只验收到 Studio 编辑器，不能据此推断其他账号或未来的地区资格。`gcloud/CDN` 同日有间歇超时，不能用其结果概括同一服务器的 Reality 路径。
+
 ## 使用方式
 
 将以下选项添加到现有共享汇总计划，不替换 sources、snapshot、sensitive 或身份字段：
@@ -9,20 +13,23 @@
 ```json
 {
   "mihomo_main_policy": "balanced",
-  "mihomo_agy_proxy": "gcloud/CDN"
+  "mihomo_google_ai_exits": {"agy": "lax/Reality", "default": "gcloud/Reality"}
 }
 ```
 
-节点名是示例。`mihomo_agy_proxy` 可省略；设置时必须是当前主配置和 sensitive 清单中的 `server/Reality` 或 `server/CDN`，不接受 DIRECT 或规则分隔符。沿用这个配置键，同时覆盖以下 Google AI 请求：
+`agy` 只用于下面三种 agy 进程的 Google API 请求；浏览器授权页、桌面 GUI 与 Google AI 网页走 `default`。两项都必须明确指定现有的 `server/Reality` 或 `server/CDN`，快照中的节点还须通过 VLESS/UDP 校验。这个选择不扩充共享敏感组。
+
+旧计划仍可使用 `mihomo_agy_proxy` 指定敏感组中的单一节点；两种设置互斥。匹配范围：
 
 - OMB 官方 `agy_acp_server.par` / `localharness_external`，以及命令行 `agy` 访问 `googleapis.com`。
 - Google AI Studio 的 `aistudio.google.com`、官方文档/地区跳转 `ai.google.dev`、Gemini API `generativelanguage.googleapis.com`，以及其 `accounts.google.com` / `oauth2.googleapis.com` 登录链路。后两个是 Google 共享登录主机，命中它们的所有 Google OAuth 请求都会跟随该出口，不只限于 AI Studio，无法按应用拆分。
+- 分开指定出口时，Studio 的三个精确 RPC 主机 `alkalimakersuite-pa.clients6.google.com`、`waa-pa.clients6.google.com`、`people-pa.clients6.google.com` 也走 `default`。这些主机被其他网页共用时同样命中。
 - `/Applications/Antigravity.app/Contents/Resources/bin/language_server` 访问 `googleapis.com`。按完整路径匹配，不接管其他应用里同名的语言服务。
 - `gemini.google.com` 及其子域名，以及精确主机 `geminiweb-pa.clients6.google.com`。后者是网页实际生成接口；只切首页会留下不同出口。
 
 这些规则优先于通用 Antigravity 应用规则和 AI 域名集合。其他应用的 Google API、其他 `clients6.google.com` 主机和普通网站沿用原规则；不把整个 Google 域名空间送到专用出口，也不改变 DNS、TUN 或节点选择。非标准安装路径及 Antigravity IDE 仍遵循现有应用规则，不在这次精确路径覆盖范围。
 
-`mihomo_agy_proxy` 可与 Mihomo 主配置的 `daily` 或 `balanced` 策略同时使用，不能用于 `strict`。专线规则只出现在主 Mihomo 输出中；daily 未设置专线时仍按 AI 组处理这些 Google AI 请求。Stash、派生单服务器文件及其余策略不受影响，也不会给不含指定节点的单机输出添加悬空引用。
+两种专线设置均可与 Mihomo 主配置的 `daily` 或 `balanced` 策略同时使用，不能用于 `strict`。专线规则只出现在主 Mihomo 输出中；daily 未设置专线时仍按 AI 组处理这些 Google AI 请求。Stash、派生单服务器文件及其余策略不受影响，也不会给不含指定节点的单机输出添加悬空引用。
 
 | 行为 | balanced |
 | --- | --- |

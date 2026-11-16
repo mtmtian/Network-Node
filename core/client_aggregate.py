@@ -16,7 +16,7 @@ import tempfile
 from client_output import atomic_write, write_outputs
 from client_policy import adapt_config, protect_lightpanda
 from aggregate_daily import daily_sections, OVERSEAS_DNS
-from aggregate_balanced import sections as balanced_sections, google_ai_rules
+from aggregate_balanced import sections as balanced_sections, google_ai_rules, STUDIO_BACKENDS
 from client_snapshot import snapshot_nodes
 from sensitive_policy import domain_rules, app_rules
 from ordinary_policy import ordinary_rules, ordinary_providers
@@ -45,6 +45,9 @@ DNS = {
 }
 
 
+GOOGLE_EXIT = re.compile(r'[A-Za-z0-9][A-Za-z0-9_-]{0,63}/(?:Reality|CDN)')
+
+
 def quote(value):
     return json.dumps(value, ensure_ascii=False)
 
@@ -62,9 +65,15 @@ def load_plan(root, profile):
     main_policy = plan.pop('mihomo_main_policy', 'strict')
     if main_policy not in ('strict', 'daily', 'balanced'):
         raise ValueError('mihomo_main_policy 必须为 strict/daily/balanced')
+    split = plan.pop('mihomo_google_ai_exits', None)
+    if split is not None and (
+            'mihomo_agy_proxy' in plan or main_policy == 'strict'
+            or not isinstance(split, dict) or set(split) != {'agy', 'default'}
+            or not all(isinstance(n, str) and GOOGLE_EXIT.fullmatch(n) for n in split.values())):
+        raise ValueError('mihomo_google_ai_exits 需要 daily/balanced、agy/default 两个明确节点，且不能与 mihomo_agy_proxy 并用')
     agy_proxy = plan.pop('mihomo_agy_proxy', None)
     if agy_proxy is not None and (not isinstance(agy_proxy, str)
-                                  or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_-]{0,63}/(?:Reality|CDN)', agy_proxy)
+                                  or not GOOGLE_EXIT.fullmatch(agy_proxy)
                                   or not isinstance(plan.get('sensitive'), list)
                                   or agy_proxy not in plan.get('sensitive', [])):
         raise ValueError('mihomo_agy_proxy 必须是 sensitive 清单中的节点')
@@ -88,7 +97,7 @@ def load_plan(root, profile):
             raise ValueError('快照敏感主备列表无效')
         return plan | {'sources': [], 'devices': ['shared'], 'credential_identity': 'shared',
                        'standalone': standalone, 'mihomo_main_policy': main_policy,
-                       'mihomo_agy_proxy': agy_proxy}
+                       'mihomo_agy_proxy': agy_proxy, 'mihomo_google_ai_exits': split}
     if set(plan) == shared:
         identity = plan['credential_identity']
         if not isinstance(identity, str) or not DEVICE.fullmatch(identity):
@@ -103,6 +112,7 @@ def load_plan(root, profile):
     plan['mihomo_main_policy'] = main_policy
     plan['standalone'] = standalone
     plan['mihomo_agy_proxy'] = agy_proxy
+    plan['mihomo_google_ai_exits'] = split
     devices = plan['devices']
     if (not isinstance(devices, list) or not devices
             or any(not isinstance(d, str) or not DEVICE.fullmatch(d) for d in devices)
@@ -251,11 +261,14 @@ def dns_policy(rules, *, daily=False, general_dns=None, pinned_google_ai=False):
         for domain, policy in policies.items())
 
 
-def compose(profile, device, target, nodes, sensitive, *, main_policy='strict', agy_proxy=None):
+def compose(profile, device, target, nodes, sensitive, *, main_policy='strict', agy_proxy=None, split=None):
     daily = target == 'mihomo' and main_policy == 'daily'
     balanced = target == 'mihomo' and main_policy == 'balanced'
     if agy_proxy is not None and (agy_proxy not in nodes or agy_proxy not in sensitive):
         raise ValueError('指定的 agy 节点不在主配置敏感节点中')
+    if split and any(n not in nodes for n in split.values()):
+        raise ValueError('mihomo_google_ai_exits 指定的节点不在主配置中')
+    google_proxy = split['default'] if split else agy_proxy
     general_dns = OVERSEAS_DNS + DNS[AI] if balanced else None
     template = (CORE / 'client.yaml.tmpl').read_text()
     rule_template = (CORE / 'aggregate-rules.yaml.tmpl').read_text()
@@ -295,18 +308,21 @@ def compose(profile, device, target, nodes, sensitive, *, main_policy='strict', 
                   DOWNLOAD_POLICY=SENSITIVE, RELAY_POLICY=SENSITIVE, FINAL_POLICY=SENSITIVE)
     if daily:
         values.update(daily_sections(AI, SENSITIVE, OVERSEAS, APPLE, CN))
-        if agy_proxy is None:
+        if google_proxy is None:
             values['ADDITIONAL_AI_RULES'] = google_ai_rules(AI) + '\n' + values['ADDITIONAL_AI_RULES']
     if balanced:
         values.update(balanced_sections(AI, OVERSEAS))
-    if (daily or balanced) and agy_proxy is not None:
-        values['APP_RULES'] = google_ai_rules(agy_proxy) + '\n' + values['APP_RULES']
+    if (daily or balanced) and google_proxy is not None:
+        pins = google_ai_rules(google_proxy, cli_proxy=split['agy'] if split else None)
+        values['APP_RULES'] = pins + '\n' + values['APP_RULES']
     rules = rule_template.format(**values)
     protected = [(fields[0], fields[1]) for line in rules.splitlines() if line.startswith('  - ')
                  and len(fields := line[4:].split(',')) >= 3
                  and fields[0] in ('DOMAIN', 'DOMAIN-SUFFIX') and fields[2] in (AI, SENSITIVE)]
-    if agy_proxy is not None and (daily or balanced):
+    if google_proxy is not None and (daily or balanced):
         protected.append(('DOMAIN', 'geminiweb-pa.clients6.google.com'))
+        if split:
+            protected.extend(('DOMAIN', host) for host in STUDIO_BACKENDS)
     values['ORDINARY_LOCAL_RULES'] = ordinary_rules(OVERSEAS, protected).rstrip()
     rules = rule_template.format(**values)
     used = set(re.findall(r'RULE-SET,([^,]+),', rules))
@@ -323,7 +339,7 @@ def compose(profile, device, target, nodes, sensitive, *, main_policy='strict', 
     header += '  nameserver:\n' + ''.join(f'    - https://{ip}/dns-query\n'
                                            for ip in (general_dns or (OVERSEAS_DNS if daily else DNS[SENSITIVE])))
     header += dns_policy(rules, daily=daily, general_dns=general_dns,
-                          pinned_google_ai=daily and agy_proxy is not None)
+                          pinned_google_ai=daily and google_proxy is not None)
     header = '\n'.join(line for line in header.splitlines() if not line.lstrip().startswith('#') or line.startswith('#'))
     if target == 'mihomo':
         # Route exclusions replace Stash's skip-proxy for private address ranges.
@@ -386,8 +402,11 @@ def generate(root, profile, *, target=None, check=False, publish_to=None):
                 raise ValueError('源 profile 不存在')
             stack.enter_context(profile_lock(state))
         bundles = []
+        split = plan['mihomo_google_ai_exits']
+        # Validate the extra service exits as VLESS/UDP without adding them to the shared sensitive group.
+        validated_nodes = plan['sensitive'] + (list(split.values()) if split else [])
         for client in targets:
-            nodes = (snapshot_nodes(root, profile, client, plan['sensitive']) if 'snapshot' in plan
+            nodes = (snapshot_nodes(root, profile, client, validated_nodes) if 'snapshot' in plan
                      else collect_nodes(root, plan, client))
             directory = root / 'clash-configs' / client
             rendered = {}
@@ -395,7 +414,7 @@ def generate(root, profile, *, target=None, check=False, publish_to=None):
                 shared = 'credential_identity' in plan
                 filename = f'{profile}.yaml' if shared else f'{profile}-{device}.yaml'
                 text = compose(profile, 'mac' if shared else device, client, available, plan['sensitive'],
-                               main_policy=plan['mihomo_main_policy'], agy_proxy=plan['mihomo_agy_proxy'])
+                               main_policy=plan['mihomo_main_policy'], agy_proxy=plan['mihomo_agy_proxy'], split=split)
                 if shared:
                     text = text.replace('# Network-Node config — device: mac', '# Network-Node shared client config', 1)
                 rendered[directory / filename] = text
