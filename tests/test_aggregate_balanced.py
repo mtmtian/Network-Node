@@ -91,6 +91,38 @@ class AggregateBalancedTest(unittest.TestCase):
         self.assertNotIn('+.apple.com', main['dns']['nameserver-policy'])
         self.assertEqual(self.fixture.generate(check=True), 0)
 
+    def test_split_google_exits_only_change_main_google_rules(self):
+        # Given two explicitly chosen service exits outside the ordinary sensitive pool,
+        # only the three agy processes move to lax; browser/GUI and Studio RPCs stay together.
+        self.fixture.plan.update(mihomo_main_policy='daily', mihomo_agy_proxy='gcloud/CDN')
+        self.fixture.save_plan()
+        self.fixture.generate()
+        before = self.outputs()
+        del self.fixture.plan['mihomo_agy_proxy']
+        self.fixture.plan['mihomo_google_ai_exits'] = {'agy': 'lax/Reality', 'default': 'gcloud/Reality'}
+        self.fixture.save_plan()
+        self.fixture.generate()
+        after = self.outputs()
+        main = 'mihomo/routing.yaml'
+        expected = copy.deepcopy(before)
+        rules = expected[main]['rules']
+        for index, rule in enumerate(rules):
+            if rule.endswith(',gcloud/CDN'):
+                exit_name = 'lax/Reality' if '(PROCESS-NAME,' in rule else 'gcloud/Reality'
+                rules[index] = rule.removesuffix('gcloud/CDN') + exit_name
+        pos = rules.index('DOMAIN,geminiweb-pa.clients6.google.com,gcloud/Reality') + 1
+        rules[pos:pos] = [f'DOMAIN,{host}.clients6.google.com,gcloud/Reality'
+                          for host in ('alkalimakersuite-pa', 'waa-pa', 'people-pa')]
+        self.assertTrue(after == expected, 'unexpected change outside split Google rules')
+        for exits in ({'agy': 'lax/Reality'}, {'default': 'gcloud/Reality', 'agy': 'DIRECT'},
+                      {'default': 'gcloud/Reality', 'agy': 'missing/Reality'}):
+            with self.subTest(exits=exits):
+                self.fixture.plan['mihomo_google_ai_exits'] = exits
+                self.fixture.save_plan()
+                with self.assertRaisesRegex(ValueError, 'mihomo_google_ai_exits'):
+                    self.fixture.generate()
+                self.assertTrue(self.outputs() == after)
+
     def test_invalid_agy_selection_preserves_outputs(self):
         self.fixture.generate()
         before = self.outputs()

@@ -9,10 +9,14 @@ def sections(ai, overseas):
         FINAL_POLICY=overseas)
 
 
-def google_ai_rules(proxy):
-    """Pin Google AI Studio, Gemini, and Antigravity requests to one exit."""
+STUDIO_BACKENDS = ('alkalimakersuite-pa.clients6.google.com', 'waa-pa.clients6.google.com',
+                   'people-pa.clients6.google.com')
+
+
+def google_ai_rules(proxy, *, cli_proxy=None):
+    """Pin Google AI Studio, Gemini, and Antigravity requests to their configured exits."""
     process_rules = [
-        f'  - AND,((PROCESS-NAME,{process}),(DOMAIN-SUFFIX,googleapis.com)),{proxy}'
+        f'  - AND,((PROCESS-NAME,{process}),(DOMAIN-SUFFIX,googleapis.com)),{cli_proxy or proxy}'
         for process in ('agy_acp_server.par', 'localharness_external', 'agy')]
     return '\n'.join(process_rules + [
         '  - AND,((PROCESS-PATH,/Applications/Antigravity.app/Contents/Resources/bin/language_server),'
@@ -24,4 +28,4 @@ def google_ai_rules(proxy):
         f'  - DOMAIN,oauth2.googleapis.com,{proxy}',
         f'  - DOMAIN-SUFFIX,gemini.google.com,{proxy}',
         f'  - DOMAIN,geminiweb-pa.clients6.google.com,{proxy}',
-    ])
+    ] + ([f'  - DOMAIN,{host},{proxy}' for host in STUDIO_BACKENDS] if cli_proxy else []))
