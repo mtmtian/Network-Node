@@ -23,6 +23,17 @@ except ImportError:
     yaml = None
 
 
+GOOGLE_WEB_NEW_RULES = (
+    'DOMAIN,flow.google.com', 'DOMAIN,notebooklm.google', 'DOMAIN,notebook.google',
+    'DOMAIN,notebook.google.com', 'DOMAIN,stitch.google.com', 'DOMAIN,stitch.withgoogle.com',
+    'DOMAIN-SUFFIX,flowmusic.app',
+)
+GOOGLE_WEB_RULES = GOOGLE_WEB_NEW_RULES + (
+    'DOMAIN-SUFFIX,notebooklm.google.com', 'DOMAIN,notebooklm-pa.googleapis.com',
+    'DOMAIN,aisandbox-pa.googleapis.com',
+)
+
+
 class AggregateTest(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()

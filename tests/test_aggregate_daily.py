@@ -36,7 +36,7 @@ class AggregateDailyTest(unittest.TestCase):
                 self.assertEqual(before[name], after[name], name)
         main = after['mihomo/routing.yaml']
         self.assertEqual(main['proxies'], before['mihomo/routing.yaml']['proxies'])
-        self.assertEqual(len(main['rules']), 429)
+        self.assertEqual(len(main['rules']), 429 + len(fixtures.GOOGLE_WEB_NEW_RULES))
         self.assertEqual(sum('lightpanda' in rule for rule in main['rules']), 10)
         self.assertEqual(main['rules'][-3:], ['RULE-SET,cn-ip,🇨🇳 国内流量',
                                              'GEOIP,CN,🇨🇳 国内流量', 'MATCH,🌐 普通海外'])
@@ -70,8 +70,24 @@ class AggregateDailyTest(unittest.TestCase):
             'rule-providers': '33888f3e51d297f73cfb603dab7b7d31ae5c559264eab07a4cf9b46bffb3a770',
             'proxy-groups': '09d5331a573248ae6c1e7d46a9be127f08ab5b68f1518cd0d151f35228a87503',
         }
+        # Remove only the newly approved routes and DNS entries before comparing
+        # to the independently captured baseline above.
+        added_rules = {f'{match},🤖 AI / Meta 服务' for match in fixtures.GOOGLE_WEB_NEW_RULES}
+        added_dns = {('+.' if kind == 'DOMAIN-SUFFIX' else '') + host
+                     for kind, host in (match.split(',') for match in fixtures.GOOGLE_WEB_NEW_RULES)}
+        rule_order = main['rules']
+        for rule in added_rules:
+            self.assertEqual(rule_order.count(rule), 1)
+            self.assertLess(rule_order.index(rule), rule_order.index('RULE-SET,cn,🇨🇳 国内流量'))
+        baseline = main | {'rules': [rule for rule in rule_order if rule not in added_rules],
+                           'dns': main['dns'] | {'nameserver-policy': {
+                               name: servers for name, servers in main['dns']['nameserver-policy'].items()
+                               if name not in added_dns}}}
+        for name in added_dns:
+            self.assertEqual(main['dns']['nameserver-policy'][name],
+                             ['https://1.1.1.1/dns-query', 'https://1.0.0.1/dns-query'])
         for section, digest in expected.items():
-            actual = json.dumps(main[section], sort_keys=True, ensure_ascii=False, separators=(',', ':'))
+            actual = json.dumps(baseline[section], sort_keys=True, ensure_ascii=False, separators=(',', ':'))
             self.assertEqual(hashlib.sha256(actual.encode()).hexdigest(), digest, section)
         self.assertEqual(self.fixture.generate(check=True), 0)
 
@@ -105,11 +121,14 @@ class AggregateDailyTest(unittest.TestCase):
             'DOMAIN-SUFFIX,gemini.google.com,gcloud/CDN',
             'DOMAIN,geminiweb-pa.clients6.google.com,gcloud/CDN',
         ]
+        added_pins = [f'{match},gcloud/CDN' for match in fixtures.GOOGLE_WEB_RULES]
+        expected_rules.extend(added_pins)
         rules = main['rules']
         indexes = [rules.index(rule) for rule in expected_rules]
-        self.assertEqual([rules.count(rule) for rule in expected_rules], [1] * 11)
-        self.assertEqual(indexes, list(range(indexes[0], indexes[0] + 11)))
-        old_ai_rules = [rule.replace('gcloud/CDN', '🤖 AI / Meta 服务') for rule in expected_rules]
+        self.assertTrue(all(rules.count(rule) == 1 for rule in expected_rules))
+        self.assertEqual(indexes, list(range(indexes[0], indexes[0] + len(expected_rules))))
+        old_ai_rules = [rule.replace('gcloud/CDN', '🤖 AI / Meta 服务')
+                        for rule in expected_rules if rule not in added_pins]
         baseline_other_rules = list(before_main['rules'])
         for rule in old_ai_rules:
             reverse_index = baseline_other_rules[::-1].index(rule)

@@ -6,11 +6,12 @@ import re
 DATA = Path(__file__).with_name('sensitive-services.json')
 
 
-def domain_rules(group):
+def domain_rules(group, *, service_name=None):
     services = json.loads(DATA.read_text())
+    selected = services.values() if service_name is None else (services[service_name],)
     seen = set()
     lines = []
-    for service in services.values():
+    for service in selected:
         if (not isinstance(service, dict)
                 or not {'domains', 'suffixes'} <= set(service)
                 or set(service) - {'domains', 'suffixes', 'keywords'}):

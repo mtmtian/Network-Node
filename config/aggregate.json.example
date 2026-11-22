@@ -20,5 +20,6 @@
   "credential_identity": "mac",
   "standalone": true,
   "mihomo_main_policy": "balanced",
-  "mihomo_agy_proxy": "gcloud/CDN"
+  "mihomo_agy_proxy": "gcloud/CDN",
+  "stash_google_ai_proxy": "gcloud/Reality"
 }
