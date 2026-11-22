@@ -50,6 +50,19 @@
       "js.stripe.com"
     ]
   },
+  "google_ai_web": {
+    "suffixes": [
+      "flowmusic.app"
+    ],
+    "domains": [
+      "flow.google.com",
+      "notebooklm.google",
+      "notebook.google",
+      "notebook.google.com",
+      "stitch.google.com",
+      "stitch.withgoogle.com"
+    ]
+  },
   "openai_dependencies": {
     "suffixes": [],
     "domains": [

@@ -129,8 +129,9 @@ class AggregateRuntimeTest(unittest.TestCase):
             # AI deliberately omits the new products and CN overlaps them:
             # only their static anchors can yield the expected PRIMARY exit.
             domains = {'cn': ['baidu.com', 'openai.com', 'reddit.com', 'tiktokshop.com',
-                              'muse.ai', 'grokbot.com', 'grokipedia.com'],
-                       'ai': ['openai.com', 'netflix.com', 'clients6.google.com'],
+                              'muse.ai', 'grokbot.com', 'grokipedia.com', 'flow.google.com',
+                              'notebook.google.com', 'stitch.google.com', 'flowmusic.app'],
+                       'ai': ['openai.com', 'netflix.com', 'clients6.google.com', 'labs.google'],
                        'apple-cn': ['apple.cn'], 'ads-lite': ['ads.test']}.get(name, ['unused.invalid'])
             if policy == 'balanced':
                 domains = domains + ['apple-relay.apple.com', 'apple-relay.cloudflare.com',
@@ -163,7 +164,8 @@ class AggregateRuntimeTest(unittest.TestCase):
         domains = ['baidu.com', 'openai.com', 'unknown.example', 'unlisted.cn', 'apple.cn',
                    'netflix.com', 'reddit.com', 'accounts.google.com', 'oauth2.googleapis.com',
                    'aistudio.google.com', 'ai.google.dev', 'generativelanguage.googleapis.com',
-                   'gemini.google.com',
+                   'gemini.google.com', 'flow.google.com', 'labs.google', 'notebook.google.com',
+                   'stitch.google.com', 'www.flowmusic.app',
                    'assets.gemini.google.com', 'geminiweb-pa.clients6.google.com',
                    'other.clients6.google.com', 'child.geminiweb-pa.clients6.google.com',
                    'unknown-ai.googleapis.com', 'youtube.com.attacker.example', 'notyoutube.com',
@@ -209,17 +211,23 @@ class AggregateRuntimeTest(unittest.TestCase):
             path.write_text(fixtures.yaml.safe_dump(config, allow_unicode=True, sort_keys=False))
             process = subprocess.Popen([binary, '-d', str(root), '-f', str(path)],
                                        stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+            logs = b''
+            tail = []
+            log_reader = None
             try:
                 with selectors.DefaultSelector() as selector:
                     selector.register(process.stdout, selectors.EVENT_READ)
                     deadline = time.monotonic() + 20
-                    logs = b''
                     while b'Mixed(http+socks) proxy listening' not in logs:
                         remaining = deadline - time.monotonic()
                         self.assertGreater(remaining, 0, logs.decode(errors='replace'))
                         self.assertIsNone(process.poll(), logs.decode(errors='replace'))
                         if selector.select(remaining):
                             logs += os.read(process.stdout.fileno(), 65536)
+                # Drain per-request logs while requests run so the proxy cannot block on a full pipe.
+                log_reader = threading.Thread(target=lambda: tail.append(process.stdout.read()))
+                log_reader.start()
+
                 def request(host):
                     connection = http.client.HTTPConnection('127.0.0.1', port, timeout=5)
                     try:
@@ -258,7 +266,11 @@ class AggregateRuntimeTest(unittest.TestCase):
                 except subprocess.TimeoutExpired:
                     process.kill()
                     process.wait()
-                runtime_logs.append((logs + process.stdout.read()).decode(errors='replace'))
+                if log_reader is not None:
+                    log_reader.join()
+                else:
+                    tail.append(process.stdout.read())
+                runtime_logs.append((logs + b''.join(tail)).decode(errors='replace'))
                 process.stdout.close()
 
         result = exercise(data)
@@ -270,7 +282,8 @@ class AggregateRuntimeTest(unittest.TestCase):
             expected.update({host: (200, 'BACKUP') for host in (
                 'aistudio.google.com', 'ai.google.dev', 'generativelanguage.googleapis.com',
                 'accounts.google.com', 'oauth2.googleapis.com',
-                'gemini.google.com', 'assets.gemini.google.com', 'geminiweb-pa.clients6.google.com')})
+                'gemini.google.com', 'assets.gemini.google.com', 'geminiweb-pa.clients6.google.com',
+                'flow.google.com', 'notebook.google.com', 'stitch.google.com', 'www.flowmusic.app')})
         if policy in ('balanced', 'daily'):
             expected.update({host: (200, 'BACKUP') for host in (
                 'unknown.example', 'unlisted.cn', 'unknown-ai.googleapis.com',

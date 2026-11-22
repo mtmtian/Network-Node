@@ -26,10 +26,13 @@
 - 分开指定出口时，Studio 的三个精确 RPC 主机 `alkalimakersuite-pa.clients6.google.com`、`waa-pa.clients6.google.com`、`people-pa.clients6.google.com` 也走 `default`。这些主机被其他网页共用时同样命中。
 - `/Applications/Antigravity.app/Contents/Resources/bin/language_server` 访问 `googleapis.com`。按完整路径匹配，不接管其他应用里同名的语言服务。
 - `gemini.google.com` 及其子域名，以及精确主机 `geminiweb-pa.clients6.google.com`。后者是网页实际生成接口；只切首页会留下不同出口。
+- Google Flow 的 `flow.google.com` 和旧接口 `aisandbox-pa.googleapis.com`，Gemini Notebook 的新旧主机和现有 API，Stitch 的新旧主机，以及 Flow Music 的 `flowmusic.app` 和子域名。这些精确规则优先于共用 AI 规则集，`labs.google` 仍由原规则处理，避免同时改变多个 Labs 实验。
 
-这些规则优先于通用 Antigravity 应用规则和 AI 域名集合。其他应用的 Google API、其他 `clients6.google.com` 主机和普通网站沿用原规则；不把整个 Google 域名空间送到专用出口，也不改变 DNS、TUN 或节点选择。非标准安装路径及 Antigravity IDE 仍遵循现有应用规则，不在这次精确路径覆盖范围。
+这些规则优先于通用 Antigravity 应用规则和 AI 域名集合。其他应用的 Google API、其他 `clients6.google.com` 主机和普通网站沿用原规则。非标准安装路径及 Antigravity IDE 仍遵循现有应用规则，不在这次精确路径覆盖范围。
 
-两种专线设置均可与 Mihomo 主配置的 `daily` 或 `balanced` 策略同时使用，不能用于 `strict`。专线规则只出现在主 Mihomo 输出中；daily 未设置专线时仍按 AI 组处理这些 Google AI 请求。Stash、派生单服务器文件及其余策略不受影响，也不会给不含指定节点的单机输出添加悬空引用。
+两种 Mihomo 专线设置均可与主配置的 `daily` 或 `balanced` 策略同时使用，不能用于 `strict`。daily 未设置专线时仍按 AI 组处理这些 Google AI 请求。
+
+Stash 主配置可通过 `"stash_google_ai_proxy": "gcloud/Reality"` 显式指定同一网页出口，包括上述网页版服务、Studio 的精确 RPC 主机和共享 Google 登录主机。所选节点须存在于 Stash 主配置。未配置时继续使用 AI 组。Stash 使用域名规则，Mac 和 iOS 共用主配置。派生单服务器文件继续使用各自 VPS，并包含 Flow、Notebook、Stitch 和 Flow Music 的共享域名清单。
 
 | 行为 | balanced |
 | --- | --- |

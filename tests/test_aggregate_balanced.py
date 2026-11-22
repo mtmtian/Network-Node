@@ -56,6 +56,7 @@ class AggregateBalancedTest(unittest.TestCase):
             'DOMAIN,oauth2.googleapis.com,gcloud/CDN',
             'DOMAIN-SUFFIX,gemini.google.com,gcloud/CDN',
             'DOMAIN,geminiweb-pa.clients6.google.com,gcloud/CDN',
+            *[f'{match},gcloud/CDN' for match in fixtures.GOOGLE_WEB_RULES],
         ]
         app_rule = next(r for r in main['rules'] if r.startswith('PROCESS-PATH-REGEX,'))
         for rule in google_rules:
@@ -68,7 +69,10 @@ class AggregateBalancedTest(unittest.TestCase):
         self.fixture.generate()
         without_override = self.outputs()['mihomo/routing.yaml']
         pinned = [r for r in main['rules'] if r not in without_override['rules']]
-        self.assertEqual(len(pinned), 11)
+        self.assertEqual(pinned[:3], [
+            f'AND,((PROCESS-NAME,{name}),(DOMAIN-SUFFIX,googleapis.com)),gcloud/CDN'
+            for name in ('agy_acp_server.par', 'localharness_external', 'agy')])
+        self.assertEqual(pinned[3:], google_rules)
         self.assertEqual([r for r in main['rules'] if r not in pinned], without_override['rules'])
         self.assertEqual({k: v for k, v in main.items() if k != 'rules'},
                          {k: v for k, v in without_override.items() if k != 'rules'})
@@ -122,6 +126,35 @@ class AggregateBalancedTest(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, 'mihomo_google_ai_exits'):
                     self.fixture.generate()
                 self.assertTrue(self.outputs() == after)
+
+    def test_stash_google_web_exit_only_changes_stash_main(self):
+        self.fixture.generate()
+        before = self.outputs()
+        self.fixture.plan['stash_google_ai_proxy'] = 'gcloud/Reality'
+        self.fixture.save_plan()
+        self.fixture.generate()
+        after = self.outputs()
+        main = 'stash/routing.yaml'
+        routes = [f'{match},gcloud/Reality' for match in (
+            'DOMAIN-SUFFIX,aistudio.google.com', 'DOMAIN-SUFFIX,ai.google.dev',
+            'DOMAIN-SUFFIX,generativelanguage.googleapis.com', 'DOMAIN,accounts.google.com',
+            'DOMAIN,oauth2.googleapis.com', 'DOMAIN-SUFFIX,gemini.google.com',
+            'DOMAIN,geminiweb-pa.clients6.google.com', 'DOMAIN,alkalimakersuite-pa.clients6.google.com',
+            'DOMAIN,waa-pa.clients6.google.com', 'DOMAIN,people-pa.clients6.google.com',
+            *fixtures.GOOGLE_WEB_RULES,
+        )]
+        rules = after[main]['rules']
+        self.assertEqual([r for r in rules if r not in before[main]['rules']], routes)
+        self.assertLess(rules.index(routes[-1]), rules.index('RULE-SET,ai,🤖 AI / Meta 服务'))
+        after[main]['rules'] = [r for r in rules if r not in routes]
+        self.assertEqual(after, before)
+        for invalid in ('missing/Reality', 'gcloud/Reality,REJECT'):
+            with self.subTest(invalid=invalid):
+                self.fixture.plan['stash_google_ai_proxy'] = invalid
+                self.fixture.save_plan()
+                with self.assertRaisesRegex(ValueError, 'stash_google_ai_proxy'):
+                    self.fixture.generate(target='stash')
+                self.assertEqual(self.outputs()[main]['rules'], rules)
 
     def test_invalid_agy_selection_preserves_outputs(self):
         self.fixture.generate()
