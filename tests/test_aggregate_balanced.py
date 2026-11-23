@@ -156,6 +156,43 @@ class AggregateBalancedTest(unittest.TestCase):
                     self.fixture.generate(target='stash')
                 self.assertEqual(self.outputs()[main]['rules'], rules)
 
+    def test_google_selector_replaces_pins_in_both_main_configs(self):
+        self.fixture.plan.update(
+            mihomo_main_policy='daily',
+            mihomo_google_ai_exits={'agy': 'lax/Reality', 'default': 'gcloud/Reality'},
+            stash_google_ai_proxy='gcloud/Reality',
+        )
+        self.fixture.save_plan()
+        self.fixture.generate()
+        before = self.outputs()
+        self.fixture.plan['google_ai_select'] = True
+        self.fixture.save_plan()
+        self.fixture.generate()
+        after = self.outputs()
+
+        expected = copy.deepcopy(before)
+        for target in ('mihomo', 'stash'):
+            main = expected[f'{target}/routing.yaml']
+            main['proxy-groups'].insert(1, {
+                'name': 'Google AI', 'type': 'select',
+                'proxies': ['gcloud/Reality', 'cstone/Reality', 'gcloud/CDN', 'lax/Reality'],
+            })
+            self.assertIn('DOMAIN,flow.google.com,gcloud/Reality', main['rules'])
+            self.assertIn('DOMAIN,accounts.google.com,gcloud/Reality', main['rules'])
+            for i, rule in enumerate(main['rules']):
+                match, _, exit_name = rule.rpartition(',')
+                if exit_name in ('gcloud/Reality', 'lax/Reality'):
+                    main['rules'][i] = f'{match},Google AI'
+        self.assertEqual(after, expected)
+        self.assertEqual(self.fixture.generate(check=True), 0)
+
+        self.fixture.plan.pop('mihomo_google_ai_exits')
+        self.fixture.plan.pop('stash_google_ai_proxy')
+        self.fixture.save_plan()
+        with self.assertRaisesRegex(ValueError, 'google_ai_select'):
+            self.fixture.generate()
+        self.assertEqual(self.outputs(), after)
+
     def test_invalid_agy_selection_preserves_outputs(self):
         self.fixture.generate()
         before = self.outputs()

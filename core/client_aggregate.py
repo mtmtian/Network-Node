@@ -28,6 +28,7 @@ from settings import DEVICE, NAME, load_settings, validate
 
 CORE = Path(__file__).resolve().parent
 AI = '🤖 AI / Meta 服务'
+GOOGLE_AI = 'Google AI'
 SENSITIVE = '🛡 敏感服务'
 AUTO = '⚡ 自动测速'
 MANUAL = '🔧 手动选择'
@@ -85,6 +86,9 @@ def load_plan(root, profile):
     stash_proxy = plan.pop('stash_google_ai_proxy', None)
     if stash_proxy is not None and (not isinstance(stash_proxy, str) or not GOOGLE_EXIT.fullmatch(stash_proxy)):
         raise ValueError('stash_google_ai_proxy 必须指定一个 Reality 或 CDN 节点')
+    google_select = plan.pop('google_ai_select', False)
+    if not isinstance(google_select, bool) or (google_select and not (split or agy_proxy or stash_proxy)):
+        raise ValueError('google_ai_select 必须为布尔值，启用时需要至少一个 Google AI 网页出口')
     standalone = plan.pop('standalone', False)
     if not isinstance(standalone, bool):
         raise ValueError('standalone 必须为布尔值')
@@ -104,7 +108,7 @@ def load_plan(root, profile):
         return plan | {'sources': [], 'devices': ['shared'], 'credential_identity': 'shared',
                        'standalone': standalone, 'mihomo_main_policy': main_policy,
                        'mihomo_agy_proxy': agy_proxy, 'mihomo_google_ai_exits': split,
-                       'stash_google_ai_proxy': stash_proxy}
+                       'stash_google_ai_proxy': stash_proxy, 'google_ai_select': google_select}
     if set(plan) == shared:
         identity = plan['credential_identity']
         if not isinstance(identity, str) or not DEVICE.fullmatch(identity):
@@ -121,6 +125,7 @@ def load_plan(root, profile):
     plan['mihomo_agy_proxy'] = agy_proxy
     plan['mihomo_google_ai_exits'] = split
     plan['stash_google_ai_proxy'] = stash_proxy
+    plan['google_ai_select'] = google_select
     devices = plan['devices']
     if (not isinstance(devices, list) or not devices
             or any(not isinstance(d, str) or not DEVICE.fullmatch(d) for d in devices)
@@ -224,12 +229,15 @@ def group(name, kind, proxies, target):
     return text + '    proxies:\n' + ''.join(f'      - {quote(n)}\n' for n in proxies) + '\n'
 
 
-def groups(nodes, sensitive, target, *, daily=False):
+def groups(nodes, sensitive, target, *, daily=False, google_default=None):
     auto = [name for name in nodes if not name.endswith('/Reality-WARP')]
-    selections = [(AI, [SENSITIVE]),
-                  (OVERSEAS, [AUTO, SENSITIVE, MANUAL]), (CN, ['DIRECT', SENSITIVE, MANUAL]),
-                  (APPLE, ['DIRECT', OVERSEAS, SENSITIVE] if daily else [SENSITIVE, MANUAL]),
-                  (ADS, ['REJECT', SENSITIVE, MANUAL, 'DIRECT'])]
+    selections = [(AI, [SENSITIVE])]
+    if google_default is not None:
+        other_nodes = [name for name in nodes if name != google_default and GOOGLE_EXIT.fullmatch(name)]
+        selections.append((GOOGLE_AI, [google_default, *other_nodes]))
+    selections.extend([(OVERSEAS, [AUTO, SENSITIVE, MANUAL]), (CN, ['DIRECT', SENSITIVE, MANUAL]),
+                       (APPLE, ['DIRECT', OVERSEAS, SENSITIVE] if daily else [SENSITIVE, MANUAL]),
+                       (ADS, ['REJECT', SENSITIVE, MANUAL, 'DIRECT'])])
     return ('proxy-groups:\n' + ''.join(group(n, 'select', options, target) for n, options in selections)
             + group(SENSITIVE, 'select' if daily else 'fallback', sensitive, target)
             + group(AUTO, 'url-test', auto, target)
@@ -270,7 +278,7 @@ def dns_policy(rules, *, daily=False, general_dns=None, pinned_google_ai=False):
 
 
 def compose(profile, device, target, nodes, sensitive, *, main_policy='strict', agy_proxy=None, split=None,
-            stash_proxy=None):
+            stash_proxy=None, google_select=False):
     daily = target == 'mihomo' and main_policy == 'daily'
     balanced = target == 'mihomo' and main_policy == 'balanced'
     if agy_proxy is not None and (agy_proxy not in nodes or agy_proxy not in sensitive):
@@ -280,6 +288,7 @@ def compose(profile, device, target, nodes, sensitive, *, main_policy='strict', 
     google_proxy = split['default'] if split else agy_proxy
     if stash_proxy is not None and stash_proxy not in nodes:
         raise ValueError('stash_google_ai_proxy 指定的节点不在 Stash 主配置中')
+    google_default = (google_proxy if daily or balanced else stash_proxy) if google_select else None
     general_dns = OVERSEAS_DNS + DNS[AI] if balanced else None
     template = (CORE / 'client.yaml.tmpl').read_text()
     rule_template = (CORE / 'aggregate-rules.yaml.tmpl').read_text()
@@ -324,11 +333,16 @@ def compose(profile, device, target, nodes, sensitive, *, main_policy='strict', 
     if balanced:
         values.update(balanced_sections(AI, OVERSEAS))
     if (daily or balanced) and google_proxy is not None:
-        pins = google_ai_rules(google_proxy, cli_proxy=split['agy'] if split else None)
-        values['APP_RULES'] = '\n'.join((pins, additional_google_web_rules(google_proxy), values['APP_RULES']))
+        web_exit = GOOGLE_AI if google_default else google_proxy
+        cli_exit = None
+        if split:
+            cli_exit = web_exit if google_default else split['agy']
+        pins = google_ai_rules(web_exit, cli_proxy=cli_exit)
+        values['APP_RULES'] = '\n'.join((pins, additional_google_web_rules(web_exit), values['APP_RULES']))
     if stash_proxy is not None:
-        values['APP_RULES'] = '\n'.join((google_web_rules(stash_proxy, studio_backends=True),
-                                        additional_google_web_rules(stash_proxy), values['APP_RULES']))
+        web_exit = GOOGLE_AI if google_default else stash_proxy
+        values['APP_RULES'] = '\n'.join((google_web_rules(web_exit, studio_backends=True),
+                                        additional_google_web_rules(web_exit), values['APP_RULES']))
     rules = rule_template.format(**values)
     protected = [(fields[0], fields[1]) for line in rules.splitlines() if line.startswith('  - ')
                  and len(fields := line[4:].split(',')) >= 3
@@ -363,9 +377,9 @@ def compose(profile, device, target, nodes, sensitive, *, main_policy='strict', 
             '    - 192.168.0.0/16\n    - 169.254.0.0/16\n    - 100.64.0.0/10\n'
             '    - ::1/128\n    - fc00::/7\n    - fe80::/10\n'
             '  dns-hijack:\n')
+    group_text = groups(nodes, sensitive, target, daily=daily or balanced, google_default=google_default)
     config = (header + '\n\nproxies:\n' + '\n'.join(nodes.values()) + '\n'
-              + groups(nodes, sensitive, target, daily=daily or balanced) + 'rule-providers:\n' + providers
-              + '\nrules:\n' + rules)
+              + group_text + 'rule-providers:\n' + providers + '\nrules:\n' + rules)
     return protect_lightpanda(config, target)
 
 
@@ -431,7 +445,7 @@ def generate(root, profile, *, target=None, check=False, publish_to=None):
                 filename = f'{profile}.yaml' if shared else f'{profile}-{device}.yaml'
                 text = compose(profile, 'mac' if shared else device, client, available, plan['sensitive'],
                                main_policy=plan['mihomo_main_policy'], agy_proxy=plan['mihomo_agy_proxy'],
-                               split=split, stash_proxy=stash_proxy)
+                               split=split, stash_proxy=stash_proxy, google_select=plan['google_ai_select'])
                 if shared:
                     text = text.replace('# Network-Node config — device: mac', '# Network-Node shared client config', 1)
                 rendered[directory / filename] = text

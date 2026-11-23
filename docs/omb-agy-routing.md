@@ -34,6 +34,12 @@
 
 Stash 主配置可通过 `"stash_google_ai_proxy": "gcloud/Reality"` 显式指定同一网页出口，包括上述网页版服务、Studio 的精确 RPC 主机和共享 Google 登录主机。所选节点须存在于 Stash 主配置。未配置时继续使用 AI 组。Stash 使用域名规则，Mac 和 iOS 共用主配置。派生单服务器文件继续使用各自 VPS，并包含 Flow、Notebook、Stitch 和 Flow Music 的共享域名清单。
 
+### 在客户端手动切换 Google AI 线路
+
+在已有网页出口设置的汇总计划中加入 `"google_ai_select": true`，重新生成并发布主配置。`Google AI` 手动选择组出现在已配置网页出口的客户端主配置中。组里首选该客户端的原网页出口，其他选项来自主配置已有的 Reality/CDN 节点。Clash Verge 和 Stash 各自选择线路。
+
+启用后，Google 登录、Gemini、AI Studio、Flow、Notebook、Stitch 和 Flow Music 的专线规则都跟随这个组。Mihomo 的 Antigravity 桌面语言服务和 `agy` 进程也跟随组选择。移除该选项并重新生成可恢复已有的 `agy` / `default` 分流。普通海外流量仍由自己的组控制。
+
 | 行为 | balanced |
 | --- | --- |
 | 敏感组 | select 手动选择，不扩展允许节点 |

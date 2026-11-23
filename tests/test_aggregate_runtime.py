@@ -29,7 +29,7 @@ class AggregateRuntimeTest(unittest.TestCase):
     def test_balanced_routes_apple_and_unknown_services(self):
         self.exercise_policy('balanced')
 
-    def test_daily_routes_gemini_generation_to_explicit_exit(self):
+    def test_daily_routes_google_generation_through_selectable_exit(self):
         self.exercise_policy('daily')
 
     def exercise_policy(self, policy):
@@ -44,6 +44,8 @@ class AggregateRuntimeTest(unittest.TestCase):
         fixture.plan['mihomo_main_policy'] = policy
         if policy in ('balanced', 'daily'):
             fixture.plan['mihomo_agy_proxy'] = 'gcloud/CDN'
+        if policy == 'daily':
+            fixture.plan['google_ai_select'] = True
         fixture.save_plan()
         fixture.generate(target='mihomo')
         root = fixture.root
@@ -258,6 +260,19 @@ class AggregateRuntimeTest(unittest.TestCase):
                 for name, provider in config['rule-providers'].items():
                     if name.startswith('ordinary-') and provider['type'] == 'file':
                         self.assertGreater(registry[name]['ruleCount'], 0, name)
+                if policy == 'daily':
+                    connection = http.client.HTTPConnection('127.0.0.1', control_port, timeout=5)
+                    try:
+                        connection.request('PUT', '/proxies/Google%20AI',
+                                           json.dumps({'name': 'cstone/Reality'}),
+                                           {'Content-Type': 'application/json'})
+                        response = connection.getresponse()
+                        self.assertEqual(response.status, 204)
+                    finally:
+                        connection.close()
+                    self.assertEqual(request('flow.google.com'), (200, 'PRIMARY'))
+                    self.assertEqual(request('accounts.google.com'), (200, 'PRIMARY'))
+                    self.assertEqual(request('youtube.com'), (200, 'BACKUP'))
                 return results
             finally:
                 process.terminate()
