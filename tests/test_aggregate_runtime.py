@@ -17,6 +17,7 @@ import subprocess
 import threading
 import time
 import unittest
+from urllib.parse import quote
 
 import test_aggregate as fixtures
 
@@ -42,9 +43,10 @@ class AggregateRuntimeTest(unittest.TestCase):
         self.addCleanup(fixture.doCleanups)
         fixture.shared_plan()
         fixture.plan['mihomo_main_policy'] = policy
-        if policy in ('balanced', 'daily'):
+        if policy == 'balanced':
             fixture.plan['mihomo_agy_proxy'] = 'gcloud/CDN'
-        if policy == 'daily':
+        elif policy == 'daily':
+            fixture.plan['mihomo_google_ai_exits'] = {'agy': 'cstone/Reality', 'default': 'cstone/Reality'}
             fixture.plan['google_ai_select'] = True
         fixture.save_plan()
         fixture.generate(target='mihomo')
@@ -263,15 +265,15 @@ class AggregateRuntimeTest(unittest.TestCase):
                 if policy == 'daily':
                     connection = http.client.HTTPConnection('127.0.0.1', control_port, timeout=5)
                     try:
-                        connection.request('PUT', '/proxies/Google%20AI',
-                                           json.dumps({'name': 'cstone/Reality'}),
+                        connection.request('PUT', '/proxies/' + quote('✨ Google AI'),
+                                           json.dumps({'name': 'gcloud/CDN'}),
                                            {'Content-Type': 'application/json'})
                         response = connection.getresponse()
                         self.assertEqual(response.status, 204)
                     finally:
                         connection.close()
-                    self.assertEqual(request('flow.google.com'), (200, 'PRIMARY'))
-                    self.assertEqual(request('accounts.google.com'), (200, 'PRIMARY'))
+                    self.assertEqual(request('flow.google.com'), (200, 'BACKUP'))
+                    self.assertEqual(request('accounts.google.com'), (200, 'BACKUP'))
                     self.assertEqual(request('youtube.com'), (200, 'BACKUP'))
                 return results
             finally:
@@ -293,7 +295,7 @@ class AggregateRuntimeTest(unittest.TestCase):
         expected.update({'127.0.0.1': (200, 'DIRECT'), 'baidu.com': (502, ''),
                          'apple.cn': (502, ''), 'reddit.com': (502, '')})
         expected.update({host: (200, 'BACKUP') for host in ordinary})
-        if policy in ('balanced', 'daily'):
+        if policy == 'balanced':
             expected.update({host: (200, 'BACKUP') for host in (
                 'aistudio.google.com', 'ai.google.dev', 'generativelanguage.googleapis.com',
                 'accounts.google.com', 'oauth2.googleapis.com',
