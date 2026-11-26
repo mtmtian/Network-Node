@@ -36,9 +36,11 @@ Stash 主配置可通过 `"stash_google_ai_proxy": "gcloud/Reality"` 显式指�
 
 ### 在客户端手动切换 Google AI 线路
 
-在已有网页出口设置的汇总计划中加入 `"google_ai_select": true`，重新生成并发布主配置。`Google AI` 手动选择组出现在已配置网页出口的客户端主配置中。组里首选该客户端的原网页出口，其他选项来自主配置已有的 Reality/CDN 节点。Clash Verge 和 Stash 各自选择线路。
+在已有网页出口设置的汇总计划中加入 `"google_ai_select": true`，重新生成并发布主配置。`✨ Google AI` 组出现在已配置网页出口的客户端主配置中。组里第一项是该客户端的默认节点，其余选项来自主配置已有的 Reality/CDN 节点。示例计划在 Mihomo 和 Stash 都把 `cstone/Reality` 排在第一项。Clash Verge 和 Stash 各自保存手动选择。
 
 启用后，Google 登录、Gemini、AI Studio、Flow、Notebook、Stitch 和 Flow Music 的专线规则都跟随这个组。Mihomo 的 Antigravity 桌面语言服务和 `agy` 进程也跟随组选择。移除该选项并重新生成可恢复已有的 `agy` / `default` 分流。普通海外流量仍由自己的组控制。
+
+主配置给该组设置 Google 彩色 G。组名前的 `✨` 也会出现在 Clash Verge 首页的代理组选择器和代理页右侧导航，这两处根据组名显示标识。已有客户端从旧组名更新后，可在 `✨ Google AI` 组重新选择节点。
 
 | 行为 | balanced |
 | --- | --- |

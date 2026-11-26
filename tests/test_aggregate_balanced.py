@@ -159,8 +159,8 @@ class AggregateBalancedTest(unittest.TestCase):
     def test_google_selector_replaces_pins_in_both_main_configs(self):
         self.fixture.plan.update(
             mihomo_main_policy='daily',
-            mihomo_google_ai_exits={'agy': 'lax/Reality', 'default': 'gcloud/Reality'},
-            stash_google_ai_proxy='gcloud/Reality',
+            mihomo_google_ai_exits={'agy': 'lax/Reality', 'default': 'cstone/Reality'},
+            stash_google_ai_proxy='cstone/Reality',
         )
         self.fixture.save_plan()
         self.fixture.generate()
@@ -174,15 +174,16 @@ class AggregateBalancedTest(unittest.TestCase):
         for target in ('mihomo', 'stash'):
             main = expected[f'{target}/routing.yaml']
             main['proxy-groups'].insert(1, {
-                'name': 'Google AI', 'type': 'select',
-                'proxies': ['gcloud/Reality', 'cstone/Reality', 'gcloud/CDN', 'lax/Reality'],
+                'name': '✨ Google AI', 'type': 'select',
+                'icon': 'https://www.gstatic.com/images/branding/product/2x/googleg_48dp.png',
+                'proxies': ['cstone/Reality', 'gcloud/Reality', 'gcloud/CDN', 'lax/Reality'],
             })
-            self.assertIn('DOMAIN,flow.google.com,gcloud/Reality', main['rules'])
-            self.assertIn('DOMAIN,accounts.google.com,gcloud/Reality', main['rules'])
+            self.assertIn('DOMAIN,flow.google.com,cstone/Reality', main['rules'])
+            self.assertIn('DOMAIN,accounts.google.com,cstone/Reality', main['rules'])
             for i, rule in enumerate(main['rules']):
                 match, _, exit_name = rule.rpartition(',')
-                if exit_name in ('gcloud/Reality', 'lax/Reality'):
-                    main['rules'][i] = f'{match},Google AI'
+                if exit_name in ('cstone/Reality', 'lax/Reality'):
+                    main['rules'][i] = f'{match},✨ Google AI'
         self.assertEqual(after, expected)
         self.assertEqual(self.fixture.generate(check=True), 0)
 

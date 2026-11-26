@@ -28,7 +28,8 @@ from settings import DEVICE, NAME, load_settings, validate
 
 CORE = Path(__file__).resolve().parent
 AI = '🤖 AI / Meta 服务'
-GOOGLE_AI = 'Google AI'
+GOOGLE_AI = '✨ Google AI'
+GOOGLE_AI_ICON = 'https://www.gstatic.com/images/branding/product/2x/googleg_48dp.png'
 SENSITIVE = '🛡 敏感服务'
 AUTO = '⚡ 自动测速'
 MANUAL = '🔧 手动选择'
@@ -220,6 +221,8 @@ def group(name, kind, proxies, target):
     if not proxies:
         raise ValueError('禁止生成空策略组，避免客户端将它视为直连')
     text = f'  - name: {quote(name)}\n    type: {kind}\n'
+    if name == GOOGLE_AI:
+        text += f'    icon: {quote(GOOGLE_AI_ICON)}\n'
     if kind != 'select':
         text += f'    interval: {60 if kind == "fallback" else 300}\n    lazy: false\n'
         if target == 'mihomo':
